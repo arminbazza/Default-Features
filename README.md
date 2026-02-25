@@ -6,7 +6,10 @@ The first thing we'll do is setup our environment:
 ```bash
 conda env create -f env.yml
 ```
-Next, we need to setup pyproject. To do that run `pip install -e .` once from the root directory.
+Next, we need to setup pyproject. To do that run this once from the root directory:
+ ```bash
+ pip install -e .
+ ```
 
 Alright
 
