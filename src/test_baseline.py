@@ -20,7 +20,7 @@ import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from utils import create_transition_open, get_complete_DR, woodbury_complete
-from models.Networks import RepairNetwork
+from networks.repair import TestRepairNetwork
 
 
 # ============================================================
@@ -97,7 +97,7 @@ D_true = get_complete_DR(T=T_new)
 # print("\nVisualizing the correction ΔD...")
 delta_D = D_true - D_os
 
-## Pick a probe state near the barrier to visualize its row
+# Pick a probe state near the barrier to visualize its row
 probe_state = (barrier_row - 1) * COLS + (barrier_col_start + 2)  # one row above middle of barrier
 probe_row = delta_D[probe_state].reshape(ROWS, COLS)
 
@@ -163,7 +163,7 @@ coords_all = torch.tensor(all_coords(), device=device)              # (400, 2)
 D_os_tensor = torch.tensor(D_os, dtype=torch.float32, device=device) # (400, 400)
 
 # Model
-model = RepairNetwork(num_states=NUM_STATES, hidden_dim=HIDDEN_DIM, rank=RANK).to(device)
+model = TestRepairNetwork(num_states=NUM_STATES, hidden_dim=HIDDEN_DIM, rank=RANK).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=LR)
 
 # One-hot vectors for the "feature" in DR TD update
