@@ -2,11 +2,11 @@
 
 from .encoders import GridEncoder
 from .sf_networks import SFNetwork
-from .repair import RepairNetwork, TestRepairNetwork
+from .repair import RepairNetworkSF, RepairNetworkLinear
 
 __all__ = [
     'GridEncoder',
     'SFNetwork',
-    'RepairNetwork',
-    'TestRepairNetwork',
+    'RepairNetworkSF',
+    'RepairNetworkLinear',
 ]

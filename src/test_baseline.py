@@ -20,7 +20,7 @@ import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from utils import create_transition_open, get_complete_DR, woodbury_complete
-from networks.repair import TestRepairNetwork
+from networks.repair import RepairNetworkLinear
 
 
 # ============================================================
@@ -29,7 +29,7 @@ from networks.repair import TestRepairNetwork
 
 ROWS, COLS = 20, 20
 NUM_STATES = ROWS * COLS
-COST = 0.1  # per-state cost (matches paper: r = -0.1, lambda = 1)
+COST = 0.1
 
 
 def state_to_coords(state, rows=ROWS, cols=COLS):
@@ -151,10 +151,9 @@ print("\nTraining repair network...")
 device = torch.device('mps')
 
 # Hyperparameters
-RANK = 20          # Low-rank bottleneck dimension
-HIDDEN_DIM = 128
+HIDDEN_DIM = 400
 LR = 1e-3
-NUM_STEPS = 50000
+NUM_STEPS = 5000
 BATCH_SIZE = 256
 GAMMA = np.exp(-COST)  # discount = exp(-c) since cost is uniform
 
@@ -163,7 +162,7 @@ coords_all = torch.tensor(all_coords(), device=device)              # (400, 2)
 D_os_tensor = torch.tensor(D_os, dtype=torch.float32, device=device) # (400, 400)
 
 # Model
-model = TestRepairNetwork(num_states=NUM_STATES, hidden_dim=HIDDEN_DIM, rank=RANK).to(device)
+model = RepairNetworkLinear(num_states=NUM_STATES, hidden_dim=HIDDEN_DIM).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=LR)
 
 # One-hot vectors for the "feature" in DR TD update
@@ -179,37 +178,32 @@ for step in range(NUM_STEPS):
     # Sample next states from T_new for each
     batch_next = np.array([sample_transition(T_new, s) for s in batch_states])
 
-    # Get coordinates
-    s_coords = coords_all[batch_states]        # (B, 2)
-    sp_coords = coords_all[batch_next]         # (B, 2)
-
     # Frozen baseline rows
-    psi_os_s = D_os_tensor[batch_states]       # (B, S)
-    psi_os_sp = D_os_tensor[batch_next]        # (B, S)
+    D_os_s = D_os_tensor[batch_states]       # (B, S)
+    D_os_sp = D_os_tensor[batch_next]        # (B, S)
 
     # Repair network predictions
-    delta_s = model(s_coords)                  # (B, S)
+    delta_s = model(D_os_s)                  # (B, S)
     with torch.no_grad():
-        delta_sp = model(sp_coords)            # (B, S)
+        delta_sp = model(D_os_sp)            # (B, S)
 
     # Full predictions
-    psi_s = psi_os_s + delta_s                 # (B, S)
-    psi_sp_target = psi_os_sp + delta_sp       # (B, S)
+    D_s = D_os_s + delta_s                 # (B, S)
+    D_sp_target = D_os_sp + delta_sp       # (B, S)
 
-    # TD target: exp(-c) * 1_s + exp(-c) * ψ(s')
-    # (this is the DR Bellman equation)
+    # TD target:
     onehot_s = eye[batch_states]               # (B, S)
-    target = GAMMA * onehot_s + GAMMA * psi_sp_target
+    target = GAMMA * onehot_s + GAMMA * D_sp_target
 
     # Loss
-    loss = nn.functional.mse_loss(psi_s, target)
+    loss = nn.functional.mse_loss(D_s, target)
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
 
     losses.append(loss.item())
 
-    if (step + 1) % 5000 == 0:
+    if (step + 1) % 1000 == 0:
         print(f"  Step {step+1}/{NUM_STEPS}, Loss: {loss.item():.6f}")
 
 
@@ -221,7 +215,7 @@ print("\nStep 5: Evaluating...")
 
 model.eval()
 with torch.no_grad():
-    delta_learned = model(coords_all).cpu().numpy()  # (400, 400)
+    delta_learned = model(D_os_tensor).cpu().numpy()  # (400, 400)
 
 D_learned = D_os + delta_learned
 
