@@ -1,20 +1,11 @@
-"""
-Sanity check: Can a repair network learn the DR correction for a single barrier?
-
-Steps:
-1. Build 20x20 open grid, compute D_os (ground truth baseline)
-2. Place a barrier, compute D_true (ground truth target)
-3. Visualize ΔD = D_true - D_os to see the correction structure
-4. Train repair network via TD to learn Δψ
-5. Compare learned correction against ground truth
-"""
+import os
+import sys
 
 import numpy as np
 import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
-import sys
-import os
+
 
 # Add parent dir to path so we can import from src
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))

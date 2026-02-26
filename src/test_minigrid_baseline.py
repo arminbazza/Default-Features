@@ -1,17 +1,16 @@
-"""
-Test script to verify minigrid environment matches the baseline setup.
-This replicates test_baseline.py using minigrid instead of custom grid.
-"""
+import os
+import sys
 
 import numpy as np
 import matplotlib.pyplot as plt
-import sys
-import os
+
+
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from envs.barrier_grid import create_open_env, create_baseline_env_with_barrier
 from utils import get_complete_DR
+from networks.repair import RepairNetworkLinear
 
 # Create environments
 print("Creating open environment (20x20)...")
