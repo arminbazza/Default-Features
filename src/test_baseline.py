@@ -239,8 +239,8 @@ for ax in axes:
         ax.plot(bc, br, 'ks', markersize=4)
 
 plt.tight_layout()
-plt.savefig('figs/step5_comparison.png', dpi=150)
-print("  Saved: step5_comparison.png")
+plt.savefig('figs/BaselineSingleBarrierComparison.png', dpi=150)
+print("  Saved comparison image")
 
 # Loss curve
 fig3, ax3 = plt.subplots(figsize=(8, 3))
@@ -249,7 +249,7 @@ ax3.set_xlabel('Step (x100)')
 ax3.set_ylabel('TD Loss')
 ax3.set_title('Training Loss')
 plt.tight_layout()
-plt.savefig('figs/step5_loss_curve.png', dpi=150)
-print("  Saved: step5_loss_curve.png")
+plt.savefig('figs/BaselineSingleBarrierLossCurve.png', dpi=150)
+print("  Saved loss curve image")
 
 print("\nDone!")
