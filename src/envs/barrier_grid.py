@@ -141,9 +141,9 @@ def create_baseline_env_with_barrier():
     """
     env = BarrierGridEnv(
         size=22,
-        barriers=[('horz', 9, 11, 5)],  # horizontal wall of length 5
+        barriers=[('horz', 5, 11, 12)],  # horizontal wall of length 5
         agent_start_pos=(1, 1),
-        render_mode=None
+        render_mode='rgb_array'
     )
     return env
 
@@ -159,6 +159,6 @@ def create_open_env(size=22):
         size=size,
         barriers=[],
         agent_start_pos=(1, 1),
-        render_mode=None
+        render_mode='rgb_array'
     )
     return env

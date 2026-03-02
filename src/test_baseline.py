@@ -5,10 +5,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
-
-
-# Add parent dir to path so we can import from src
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from tqdm import tqdm
 
 from utils import create_transition_open, get_complete_DR, woodbury_complete
 from networks.repair import RepairNetworkLinear
@@ -142,9 +139,9 @@ print("\nTraining repair network...")
 device = torch.device('mps')
 
 # Hyperparameters
-HIDDEN_DIM = 400
+RANK = 400
 LR = 1e-3
-NUM_STEPS = 5000
+NUM_STEPS = 50000
 BATCH_SIZE = 256
 GAMMA = np.exp(-COST)  # discount = exp(-c) since cost is uniform
 
@@ -153,7 +150,7 @@ coords_all = torch.tensor(all_coords(), device=device)              # (400, 2)
 D_os_tensor = torch.tensor(D_os, dtype=torch.float32, device=device) # (400, 400)
 
 # Model
-model = RepairNetworkLinear(num_states=NUM_STATES, hidden_dim=HIDDEN_DIM).to(device)
+model = RepairNetworkLinear(num_states=NUM_STATES, hidden_dim=RANK).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=LR)
 
 # One-hot vectors for the "feature" in DR TD update
@@ -161,7 +158,7 @@ eye = torch.eye(NUM_STATES, device=device)
 
 losses = []
 
-for step in range(NUM_STEPS):
+for step in tqdm(range(NUM_STEPS)):
     # Sample batch of random states (not barrier states)
     valid_states = [s for s in range(NUM_STATES) if s not in barrier_states]
     batch_states = np.random.choice(valid_states, size=BATCH_SIZE)
@@ -194,7 +191,7 @@ for step in range(NUM_STEPS):
 
     losses.append(loss.item())
 
-    if (step + 1) % 1000 == 0:
+    if (step + 1) % 10000 == 0:
         print(f"  Step {step+1}/{NUM_STEPS}, Loss: {loss.item():.6f}")
 
 
@@ -239,7 +236,7 @@ for ax in axes:
         ax.plot(bc, br, 'ks', markersize=4)
 
 plt.tight_layout()
-plt.savefig('figs/BaselineSingleBarrierComparison.png', dpi=150)
+plt.savefig('figs/baseline_1barrier_comparison.png', dpi=150)
 print("  Saved comparison image")
 
 # Loss curve
@@ -249,7 +246,7 @@ ax3.set_xlabel('Step (x100)')
 ax3.set_ylabel('TD Loss')
 ax3.set_title('Training Loss')
 plt.tight_layout()
-plt.savefig('figs/BaselineSingleBarrierLossCurve.png', dpi=150)
+plt.savefig('figs/baseline_1barrier_loss.png', dpi=150)
 print("  Saved loss curve image")
 
 print("\nDone!")
