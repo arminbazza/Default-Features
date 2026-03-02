@@ -130,7 +130,7 @@ class BarrierGridEnv(EmptyEnv):
         return T
 
 
-def create_baseline_env_with_barrier():
+def create_single_barrier_horz(barrier=('horz', 5, 11, 12)):
     """
     Create the baseline environment matching test_baseline.py:
     - 20x20 internal grid (22x22 including boundary walls)
@@ -141,7 +141,16 @@ def create_baseline_env_with_barrier():
     """
     env = BarrierGridEnv(
         size=22,
-        barriers=[('horz', 5, 11, 12)],  # horizontal wall of length 5
+        barriers=[barrier],  # horizontal wall of length 5
+        agent_start_pos=(1, 1),
+        render_mode='rgb_array'
+    )
+    return env
+
+def create_two_barrier(barrier_1=('horz', 6, 13, 8), barrier_2=('vert', 6, 6, 8)):
+    env = BarrierGridEnv(
+        size=22,
+        barriers=[barrier_1, barrier_2],
         agent_start_pos=(1, 1),
         render_mode='rgb_array'
     )

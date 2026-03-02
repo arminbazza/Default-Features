@@ -8,19 +8,21 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 
-from envs.barrier_grid import create_open_env, create_baseline_env_with_barrier
+from envs.barrier_grid import create_open_env, create_single_barrier_horz, create_two_barrier
 from networks.repair import RepairNetworkLinear
 from utils import get_complete_DR
 
 # Make environments
 env_open = create_open_env(size=22)  # 20x20 internal + 2 boundary walls
 env_open.reset()
-env_barrier = create_baseline_env_with_barrier()
-env_barrier.reset()
+env_single_barrier = create_single_barrier_horz()
+env_single_barrier.reset()
 T_open = env_open.get_transition_matrix()
-T_barrier = env_barrier.get_transition_matrix()
+T_single_barrier = env_single_barrier.get_transition_matrix()
 D_os = get_complete_DR(T=T_open)
-D_true = get_complete_DR(T=T_barrier)
+D_true = get_complete_DR(T=T_single_barrier)
+env_two_barrier = create_two_barrier()
+env_two_barrier.reset()
 
 # Fixed variables
 ROWS, COLS = 20, 20
@@ -124,8 +126,15 @@ def train_single_barrier():
         action = env_open.action_space.sample()
         print(env_open.step(action))
         break
+
+def train_two_barrier():
+    for step in range(NUM_STEPS):
+        action = env_open.action_space.sample()
+        print(env_open.step(action))
+        break
     
 
 if __name__ == '__main__':
     test_and_visualize()
-    # train_single_barrier()
+    train_single_barrier()
+    train_two_barier()

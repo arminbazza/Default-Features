@@ -73,21 +73,54 @@ T_os = create_transition_open(shape=(ROWS, COLS))
 D_os = get_complete_DR(T=T_os)
 print(f"  D_os shape: {D_os.shape}")
 
-print("\nPlacing barrier and computing D_true...")
-# Place a small horizontal barrier in the middle of the grid
-barrier_row, barrier_col_start = 10, 8
-barrier_states = [barrier_row * COLS + c for c in range(barrier_col_start, barrier_col_start + 5)]
-print(f"  Barrier states: {barrier_states} (row {barrier_row}, cols {barrier_col_start}-{barrier_col_start+4})")
+def make_maze(barrier_type='horizontal'):
+    if barrier_type not in ['horizontal', 'vertical', 'L']:
+        print(f"Barrier type {barrier_type} not in available list!")
+        return 0
+    print("\nPlacing barrier and computing D_true...")
+    if barrier_type == 'horizontal':
+        print("\nPlacing barrier and computing D_true...")
+        ## Horizontal single wall
+        # Place a small horizontal barrier in the middle of the grid
+        barrier_row, barrier_col_start = 10, 8
+        barrier_states = [barrier_row * COLS + c for c in range(barrier_col_start, barrier_col_start + 5)]
 
-T_new = place_barrier(T_os, barrier_states)
-D_true = get_complete_DR(T=T_new)
+        T_new = place_barrier(T_os, barrier_states)
+        D_true = get_complete_DR(T=T_new)
+        
+        delta_D = D_true - D_os
 
-# print("\nVisualizing the correction ΔD...")
-delta_D = D_true - D_os
+        # Pick a probe state near the barrier to visualize its row
+        probe_state = (barrier_row - 1) * COLS + (barrier_col_start + 2)  # one row above middle of barrier
+        # probe_row = delta_D[probe_state].reshape(ROWS, COLS)
+    elif barrier_type == 'L':
+        ## L-shaped barrier
+        corner_row, corner_col = 11, 7
+        arm_length = 8
 
-# Pick a probe state near the barrier to visualize its row
-probe_state = (barrier_row - 1) * COLS + (barrier_col_start + 2)  # one row above middle of barrier
-probe_row = delta_D[probe_state].reshape(ROWS, COLS)
+        # Vertical arm goes upward from the corner
+        vertical_states  = [r * COLS + corner_col
+                            for r in range(corner_row - arm_length + 1, corner_row + 1)]
+
+        # Horizontal arm goes rightward from the corner
+        horizontal_states = [corner_row * COLS + c
+                            for c in range(corner_col, corner_col + arm_length)]
+
+        # Union — corner cell counted only once
+        barrier_states = list(set(vertical_states + horizontal_states))
+        
+        T_new = place_barrier(T_os, barrier_states)
+        D_true = get_complete_DR(T=T_new)
+        
+        delta_D = D_true - D_os
+
+        # Probe state is near the corner of the barrier
+        probe_state = (corner_row - 1) * COLS + (corner_col + 1)
+    
+    return T_new, D_true, delta_D, probe_state, barrier_states
+
+T_new, D_true, delta_D, probe_state, barrier_states = make_maze(barrier_type='horizontal')
+
 
 # fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 
