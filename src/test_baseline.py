@@ -120,47 +120,45 @@ def make_maze(barrier_type='horizontal'):
     return T_new, D_true, delta_D, probe_state, barrier_states
 
 T_new, D_true, delta_D, probe_state, barrier_states = make_maze(barrier_type='horizontal')
+# T_new, D_true, delta_D, probe_state, barrier_states = make_maze(barrier_type='L')
 
+# D_os row for probe state
+probe_row = delta_D[probe_state].reshape(ROWS, COLS)
+fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+im0 = axes[0].imshow(D_os[probe_state].reshape(ROWS, COLS), cmap='viridis')
+axes[0].set_title(f'D_os row (state {probe_state})')
+plt.colorbar(im0, ax=axes[0])
 
-# fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+# D_true row for probe state
+im1 = axes[1].imshow(D_true[probe_state].reshape(ROWS, COLS), cmap='viridis')
+axes[1].set_title(f'D_true row (state {probe_state})')
+plt.colorbar(im1, ax=axes[1])
 
-## D_os row for probe state
-# im0 = axes[0].imshow(D_os[probe_state].reshape(ROWS, COLS), cmap='viridis')
-# axes[0].set_title(f'D_os row (state {probe_state})')
-# plt.colorbar(im0, ax=axes[0])
+#  ΔD row — this is what the repair network needs to learn
+im2 = axes[2].imshow(probe_row, cmap='RdBu_r', vmin=-np.abs(probe_row).max(), vmax=np.abs(probe_row).max())
+axes[2].set_title(f'ΔD row (state {probe_state})')
+plt.colorbar(im2, ax=axes[2])
 
-## D_true row for probe state
-# im1 = axes[1].imshow(D_true[probe_state].reshape(ROWS, COLS), cmap='viridis')
-# axes[1].set_title(f'D_true row (state {probe_state})')
-# plt.colorbar(im1, ax=axes[1])
+# Mark barrier
+for ax in axes:
+    for bs in barrier_states:
+        br, bc = bs // COLS, bs % COLS
+        ax.plot(bc, br, 'ks', markersize=4)
 
-##  ΔD row — this is what the repair network needs to learn
-# im2 = axes[2].imshow(probe_row, cmap='RdBu_r', vmin=-np.abs(probe_row).max(), vmax=np.abs(probe_row).max())
-# axes[2].set_title(f'ΔD row (state {probe_state})')
-# plt.colorbar(im2, ax=axes[2])
+plt.tight_layout()
+plt.savefig('figs/baseline_1barrier_delta_visualization.png', dpi=150)
 
-## Mark barrier
-# for ax in axes:
-#     for bs in barrier_states:
-#         br, bc = bs // COLS, bs % COLS
-#         ax.plot(bc, br, 'ks', markersize=4)
-
-# plt.tight_layout()
-# plt.savefig('figs/step3_delta_visualization.png', dpi=150)
-# print("  Saved: step3_delta_visualization.png")
-
-## Also check: how "local" is the correction?
-# delta_norms = np.linalg.norm(delta_D, axis=1).reshape(ROWS, COLS)
-# fig2, ax2 = plt.subplots(figsize=(5, 4))
-# im = ax2.imshow(delta_norms, cmap='hot')
-# ax2.set_title('||ΔD(s,:)|| across all states\n(where does the correction matter?)')
-# for bs in barrier_states:
-#     br, bc = bs // COLS, bs % COLS
-#     ax2.plot(bc, br, 'cs', markersize=4)
-# plt.colorbar(im, ax=ax2)
-# plt.tight_layout()
-# plt.savefig('figs/step3_correction_locality.png', dpi=150)
-# print("  Saved: step3_correction_locality.png")
+# Also check: how "local" is the correction?
+delta_norms = np.linalg.norm(delta_D, axis=1).reshape(ROWS, COLS)
+fig2, ax2 = plt.subplots(figsize=(5, 4))
+im = ax2.imshow(delta_norms, cmap='hot')
+ax2.set_title('||ΔD(s,:)|| across all states\n(where does the correction matter?)')
+for bs in barrier_states:
+    br, bc = bs // COLS, bs % COLS
+    ax2.plot(bc, br, 'cs', markersize=4)
+plt.colorbar(im, ax=ax2)
+plt.tight_layout()
+plt.savefig('figs/baseline_1Barrier_correction_locality.png', dpi=150)
 
 
 # ============================================================
@@ -172,9 +170,9 @@ print("\nTraining repair network...")
 device = torch.device('mps')
 
 # Hyperparameters
-RANK = 400
+RANK = 1
 LR = 1e-3
-NUM_STEPS = 50000
+NUM_STEPS = 25000
 BATCH_SIZE = 256
 GAMMA = np.exp(-COST)  # discount = exp(-c) since cost is uniform
 
@@ -190,10 +188,9 @@ optimizer = torch.optim.Adam(model.parameters(), lr=LR)
 eye = torch.eye(NUM_STATES, device=device)
 
 losses = []
-
+valid_states = [s for s in range(NUM_STATES) if s not in barrier_states]
 for step in tqdm(range(NUM_STEPS)):
     # Sample batch of random states (not barrier states)
-    valid_states = [s for s in range(NUM_STATES) if s not in barrier_states]
     batch_states = np.random.choice(valid_states, size=BATCH_SIZE)
 
     # Sample next states from T_new for each
@@ -214,7 +211,7 @@ for step in tqdm(range(NUM_STEPS)):
 
     # TD target:
     onehot_s = eye[batch_states]               # (B, S)
-    target = GAMMA * onehot_s + GAMMA * D_sp_target
+    target = onehot_s + GAMMA * D_sp_target
 
     # Loss
     loss = nn.functional.mse_loss(D_s, target)
@@ -269,7 +266,7 @@ for ax in axes:
         ax.plot(bc, br, 'ks', markersize=4)
 
 plt.tight_layout()
-plt.savefig('figs/baseline_1barrier_comparison.png', dpi=150)
+plt.savefig('figs/baseline_1Barrier_comparison.png', dpi=150)
 print("  Saved comparison image")
 
 # Loss curve
@@ -279,7 +276,7 @@ ax3.set_xlabel('Step (x100)')
 ax3.set_ylabel('TD Loss')
 ax3.set_title('Training Loss')
 plt.tight_layout()
-plt.savefig('figs/baseline_1barrier_loss.png', dpi=150)
+plt.savefig('figs/baseline_1Barrier_loss.png', dpi=150)
 print("  Saved loss curve image")
 
 print("\nDone!")
