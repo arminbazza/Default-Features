@@ -70,7 +70,7 @@ class RepairNetworkLinear(nn.Module):
 
         self.repair = nn.Sequential(
             nn.Linear(num_states, hidden_dim),
-            # nn.ReLU(),
+            nn.ReLU(),
             nn.Linear(hidden_dim, num_states),
         )
 
