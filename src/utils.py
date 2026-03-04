@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 
 def woodbury_complete(T_old, D, T_new):
     """
@@ -59,3 +60,13 @@ def create_transition_open(shape):
                 T[state, neighbor] = 1 / len(neighbors)
 
     return T
+
+def sample_transition(T, state):
+    """Sample next state from transition matrix."""
+    probs = T[state]
+    if probs.sum() == 0:
+        return state  # stuck (barrier state)
+    return np.random.choice(len(probs), p=probs)
+
+def save_model_weights(model, path):
+    torch.save(model.state_dict(), path)
