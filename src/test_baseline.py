@@ -8,7 +8,7 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-from utils import create_transition_open, get_complete_DR, woodbury_complete
+from utils import create_transition_open, get_complete_DR, save_model_weights, sample_transition
 from networks.repair import RepairNetworkLinear
 
 
@@ -39,7 +39,7 @@ def all_coords(rows=ROWS, cols=COLS):
     return coords
 
 
-def place_barrier(T, barrier_states, rows=ROWS, cols=COLS):
+def place_barrier(T, barrier_states):
     """
     Place a barrier by blocking transitions into barrier states.
     Returns new transition matrix.
@@ -58,14 +58,6 @@ def place_barrier(T, barrier_states, rows=ROWS, cols=COLS):
             T_new[s] /= row_sum
 
     return T_new
-
-
-def sample_transition(T, state):
-    """Sample next state from transition matrix."""
-    probs = T[state]
-    if probs.sum() == 0:
-        return state  # stuck (barrier state)
-    return np.random.choice(len(probs), p=probs)
 
 
 def compute_rank(delta_D):
@@ -104,7 +96,11 @@ def make_maze(D_os, T_os, barrier_type='horizontal'):
 
         # Pick a probe state near the barrier to visualize its row
         probe_state = (barrier_row - 1) * COLS + (barrier_col_start + 4)
-        # probe_row = delta_D[probe_state].reshape(ROWS, COLS)
+        
+        filename = os.getcwd()+'/envs/baselines/HBarrier.npy'
+        if not os.path.exists(filename):
+            np.save(filename, T_new)
+
     elif barrier_type == 'L':
         ## L-shaped barrier
         corner_row, corner_col = 11, 7
@@ -128,12 +124,13 @@ def make_maze(D_os, T_os, barrier_type='horizontal'):
 
         # Probe state is near the corner of the barrier
         probe_state = (corner_row - 1) * COLS + (corner_col + 1)
+
+        filename = os.getcwd()+'/envs/baselines/LBarrier.npy'
+        if not os.path.exists(filename):
+            np.save(filename, T_new)
     
     return T_new, D_true, delta_D, probe_state, barrier_states
 
-
-def save_model_weights(model, path):
-    torch.save(model.state_dict(), path)
 
 def main(get_rank=False, delta_vis=False, save_model=False,
          train_repair=True, eval_repair=False, barrier_type='horizontal'):
