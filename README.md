@@ -1,4 +1,4 @@
-## Learning a LoRA-style Woodbury update
+# Learning a LoRA-style Woodbury update
 The goal of this project is to learn how to 'repiar' the cognitive map. Previous work has demonstrated tha...
 
 ## Usage
