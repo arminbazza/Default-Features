@@ -132,10 +132,14 @@ def make_maze(D_os, T_os, barrier_type='horizontal'):
     return T_new, D_true, delta_D, probe_state, barrier_states
 
 
-def main(get_rank=False, delta_vis=False, train_repair=True, barrier_type='horizontal'):
+def save_model_weights(model, path):
+    torch.save(model.state_dict(), path)
+
+def main(get_rank=False, delta_vis=False, save_model=False,
+         train_repair=True, eval_repair=False, barrier_type='horizontal'):
     """Main function"""
     ## Construct environment
-    print("Computing D_os for open 20x20 grid...")
+    print(f"Computing D_os for {barrier_type} barrier 20x20 grid...")
     T_os = create_transition_open(shape=(ROWS, COLS))
     D_os = get_complete_DR(T=T_os)
     print(f"  D_os shape: {D_os.shape}")
@@ -202,11 +206,6 @@ def main(get_rank=False, delta_vis=False, train_repair=True, barrier_type='horiz
         D_os_tensor = torch.tensor(D_os, dtype=torch.float32, device=device) # (400, 400)
         valid_states = [s for s in range(NUM_STATES) if s not in barrier_states]
 
-        # Model
-        model = RepairNetworkLinear(num_states=NUM_STATES, hidden_dim=RANK).to(device)
-        target_model = copy.deepcopy(model)
-        optimizer = torch.optim.Adam(model.parameters(), lr=LR)
-
         # One-hot vectors for the "feature" in DR TD update
         eye = torch.eye(NUM_STATES, device=device)
 
@@ -253,7 +252,8 @@ def main(get_rank=False, delta_vis=False, train_repair=True, barrier_type='horiz
 
 
         print("\nEvaluating repair network...")
-
+        
+    if eval_repair:
         model.eval()
         with torch.no_grad():
             delta_learned = model(D_os_tensor).cpu().numpy()  # (400, 400)
@@ -305,5 +305,11 @@ def main(get_rank=False, delta_vis=False, train_repair=True, barrier_type='horiz
         print("\nDone!")
 
 
+    ## Save model
+    if save_model:
+        save_model_weights(model, path='src/networks/saved/LBarrier.pt')
+
+
 if __name__ == '__main__':
-    main(get_rank=True, delta_vis=True, train_repair=True, barrier_type='L')
+    main(get_rank=False, delta_vis=False, save_model=True,
+         train_repair=True, eval_repair=True, barrier_type='L')
