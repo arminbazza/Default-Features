@@ -1,5 +1,8 @@
+import os
+
 import numpy as np
 import torch
+
 
 def woodbury_complete(T_old, D, T_new):
     """
@@ -25,6 +28,7 @@ def woodbury_complete(T_old, D, T_new):
 
     return D_new
 
+
 def get_complete_DR(T):
     """
     Uses matrix inversion to calculate the complete DR
@@ -36,6 +40,7 @@ def get_complete_DR(T):
     D = np.linalg.inv(L)
     
     return D
+
 
 def create_transition_open(shape):
     """
@@ -61,6 +66,7 @@ def create_transition_open(shape):
 
     return T
 
+
 def sample_transition(T, state):
     """Sample next state from transition matrix."""
     probs = T[state]
@@ -70,3 +76,66 @@ def sample_transition(T, state):
 
 def save_model_weights(model, path):
     torch.save(model.state_dict(), path)
+
+
+def state_to_coords(state, rows, cols):
+    """Convert state index to normalized (x, y) in [0, 1]."""
+    r = state // cols
+    c = state % cols
+    return np.array([r / (rows - 1), c / (cols - 1)], dtype=np.float32)
+
+
+def all_coords(rows, cols):
+    """Get normalized coords for all states. Returns (num_states, 2)."""
+    coords = np.zeros((rows * cols, 2), dtype=np.float32)
+    for s in range(rows * cols):
+        coords[s] = state_to_coords(s, rows, cols)
+    return coords
+
+
+def place_barrier(T, barrier_states):
+    """
+    Place a barrier by blocking transitions into and out of barrier states.
+    Re-normalizes rows so remaining transitions sum to 1.
+    Returns new transition matrix.
+    """
+    T_new = T.copy()
+    for bs in barrier_states:
+        T_new[:, bs] = 0
+        T_new[bs, :] = 0
+
+    for s in range(T_new.shape[0]):
+        row_sum = T_new[s].sum()
+        if row_sum > 0:
+            T_new[s] /= row_sum
+
+    return T_new
+
+
+def make_maze(T_os, barrier_type, rows=20, cols=20):
+    """
+    Build a maze by placing a barrier of the specified type.
+    Returns T_new, barrier_states.
+    """
+    if barrier_type not in ['horizontal', 'vertical', 'L']:
+        raise ValueError(f"Barrier type '{barrier_type}' not in available list: ['horizontal', 'vertical', 'L']")
+
+    if barrier_type == 'horizontal':
+        barrier_row, barrier_col_start = 10, 5
+        barrier_states = sorted([barrier_row * cols + c for c in range(barrier_col_start, barrier_col_start + 10)])
+        filename = os.getcwd() + '/envs/baselines/HBarrier.npy'
+
+    elif barrier_type == 'L':
+        corner_row, corner_col = 11, 7
+        arm_length = 8
+        vertical_states = [r * cols + corner_col for r in range(corner_row - arm_length + 1, corner_row + 1)]
+        horizontal_states = [corner_row * cols + c for c in range(corner_col, corner_col + arm_length)]
+        barrier_states = sorted(set(vertical_states + horizontal_states))
+        filename = os.getcwd() + '/envs/baselines/LBarrier.npy'
+
+    T_new = place_barrier(T_os, barrier_states)
+
+    if not os.path.exists(filename):
+        np.save(filename, T_new)
+
+    return T_new, barrier_states
