@@ -23,7 +23,7 @@ BATCH_SIZE = 256
 GAMMA = np.exp(-COST)  # discount = exp(-c) since cost is uniform
 
 
-def train_repair_network(model, target_model, optimizer, D_os_tensor, T_new, barrier_states, device):
+def train_repair_network(model, target_model, optimizer, D_os_tensor, F_tensor, T_new, barrier_states, device):
     valid_states = [s for s in range(NUM_STATES) if s not in barrier_states]
     eye = torch.eye(NUM_STATES, device=device)
     losses = []
@@ -110,28 +110,35 @@ def evaluate_repair_network(model, D_os_tensor, D_os, D_true, probe_state, barri
     print("\nDone!")
 
 
-def main(get_rank=False, delta_vis=False, save_model=False,
-         train_repair=True, eval_repair=False, barrier_type='horizontal'):
+def get_eig_decomp(D):
+    """Get eigenvalues to operate on"""
+    eigenvalues, V = np.linalg.eigh(D)
+
+    # Absorb sqrt of eigenvalues into the eigenvectors
+    F = V * np.sqrt(eigenvalues)[np.newaxis, :]
+
+    # Verify: F @ F.T should reconstruct D_os
+    # assert np.allclose(F @ F.T, D)
+
+    return F
+
+def main(save_model=False, train_repair=True, 
+         eval_repair=False, barrier_type='horizontal'):
     """Main function"""
     print(f"Computing D_os for {barrier_type} barrier {ROWS}x{COLS} grid...")
     T_os = create_transition_open(shape=(ROWS, COLS))
     D_os = get_complete_DR(T=T_os)
     print(f"  D_os shape: {D_os.shape}")
+    F_os = get_eig_decomp(D_os)
+    print(f"  Shape of F: {F_os.shape}")
 
     print("\nPlacing barrier and computing D_true...")
     T_new, barrier_states = make_maze(T_os, barrier_type, ROWS, COLS)
     D_true = get_complete_DR(T=T_new)
-    delta_D = D_true - D_os
 
     # Probe state for visualization: one row above the middle barrier cell
     mid_barrier = barrier_states[len(barrier_states) // 2]
     probe_state = mid_barrier - COLS
-
-    if get_rank:
-        compute_rank(delta_D)
-
-    if delta_vis:
-        visualize_delta(D_os, D_true, delta_D, probe_state, barrier_states, barrier_type)
 
     if train_repair:
         print("\nTraining repair network...")
@@ -142,8 +149,9 @@ def main(get_rank=False, delta_vis=False, save_model=False,
         optimizer = torch.optim.Adam(model.parameters(), lr=LR)
 
         D_os_tensor = torch.tensor(D_os, dtype=torch.float32, device=device)
+        F_os_tensor = torch.tensor(F_os, dtype=torch.float32, device=device)
 
-        losses = train_repair_network(model, target_model, optimizer, D_os_tensor, T_new, barrier_states, device)
+        losses = train_repair_network(model, target_model, optimizer, D_os_tensor, F_os_tensor, T_new, barrier_states, device)
         print("\nEvaluating repair network...")
 
     if eval_repair:
@@ -154,5 +162,5 @@ def main(get_rank=False, delta_vis=False, save_model=False,
 
 
 if __name__ == '__main__':
-    main(get_rank=False, delta_vis=False, save_model=True,
-         train_repair=True, eval_repair=True, barrier_type='L')
+    main(save_model=False, train_repair=False, 
+         eval_repair=False, barrier_type='L')
