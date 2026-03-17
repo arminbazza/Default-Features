@@ -74,8 +74,15 @@ def sample_transition(T, state):
         return state  # stuck (barrier state)
     return np.random.choice(len(probs), p=probs)
 
+
 def save_model_weights(model, path):
     torch.save(model.state_dict(), path)
+
+
+def load_model_weights(model, path):
+    model.load_state_dict(torch.load(path, weights_only=True))
+    print(f"  Loaded model from {path}")
+    return model
 
 
 def state_to_coords(state, rows, cols):
@@ -117,10 +124,10 @@ def make_maze(T_os, barrier_type, rows=20, cols=20):
     Build a maze by placing a barrier of the specified type.
     Returns T_new, barrier_states.
     """
-    if barrier_type not in ['horizontal', 'vertical', 'L']:
+    if barrier_type not in ['H', 'V', 'L']:
         raise ValueError(f"Barrier type '{barrier_type}' not in available list: ['horizontal', 'vertical', 'L']")
 
-    if barrier_type == 'horizontal':
+    if barrier_type == 'H':
         barrier_row, barrier_col_start = 10, 5
         barrier_states = sorted([barrier_row * cols + c for c in range(barrier_col_start, barrier_col_start + 10)])
         filename = os.getcwd() + '/envs/baselines/HBarrier.npy'
@@ -139,3 +146,113 @@ def make_maze(T_os, barrier_type, rows=20, cols=20):
         np.save(filename, T_new)
 
     return T_new, barrier_states
+
+
+def plan_with_D(D, T, goal_state, start_state, max_steps=500):
+    """
+    Plan a route from start to goal using linear RL with DR matrix D.
+    Returns (num_steps, path).
+    """
+    N = D.shape[0]
+    nonterminal = [s for s in range(N) if s != goal_state]
+
+    D_NN = D[np.ix_(nonterminal, nonterminal)]
+    t = T[np.ix_(nonterminal, [goal_state])].flatten()
+
+    exp_v = D_NN @ t
+    exp_v = np.maximum(exp_v, 1e-10)
+    v = np.log(exp_v)
+
+    values = np.full(N, -np.inf)
+    for i, s in enumerate(nonterminal):
+        values[s] = v[i]
+    values[goal_state] = 0.0
+
+    state = start_state
+    path = [state]
+    for step in range(max_steps):
+        if state == goal_state:
+            return step, path
+        neighbors = np.where(T[state] > 0)[0]
+        if len(neighbors) == 0:
+            break
+        state = neighbors[np.argmax(values[neighbors])]
+        path.append(state)
+
+    return max_steps, path
+
+
+def evaluate_planning(D, T, barrier_states, name, num_trials=200, 
+                      max_steps=500, seed=42):
+    """
+    Evaluate planning over random start/goal pairs.
+    Returns dict with avg, median, success rate.
+    """
+    valid = [s for s in range(D.shape[0]) if s not in barrier_states]
+    np.random.seed(seed)
+    all_steps = []
+
+    for _ in range(num_trials):
+        start, goal = np.random.choice(valid, size=2, replace=False)
+        steps, _ = plan_with_D(D, T, goal, start, max_steps)
+        all_steps.append(steps)
+
+    results = {
+        'avg': np.mean(all_steps),
+        'median': np.median(all_steps),
+        'success': np.mean([s < max_steps for s in all_steps]),
+    }
+    print(f"  {name:30s} | avg: {results['avg']:7.1f} | "
+          f"median: {results['median']:5.1f} | success: {results['success']:.2f}")
+    return results
+
+
+def evaluate_planning_barrier_crossing(D, T, barrier_states, name, 
+                                        rows, cols, num_trials=200, 
+                                        max_steps=500, seed=42):
+    """Only test start/goal pairs on opposite sides of the barrier."""
+    barrier_rows = set(bs // cols for bs in barrier_states)
+    barrier_row = min(barrier_rows)  # e.g., row 10
+    
+    # States above and below the barrier
+    above = [s for s in range(rows * cols) 
+             if s // cols < barrier_row and s not in barrier_states]
+    below = [s for s in range(rows * cols) 
+             if s // cols > barrier_row and s not in barrier_states]
+    
+    np.random.seed(seed)
+    all_steps = []
+    for _ in range(num_trials):
+        start = np.random.choice(above)
+        goal = np.random.choice(below)
+        steps, _ = plan_with_D(D, T, goal, start, max_steps)
+        all_steps.append(steps)
+    
+    avg = np.mean(all_steps)
+    median = np.median(all_steps)
+    success = np.mean([s < max_steps for s in all_steps])
+    print(f"  {name:30s} | avg: {avg:7.1f} | median: {median:5.1f} | success: {success:.2f}")
+    return all_steps
+
+def visualize_path(path, barrier_states, title, filename, rows, cols):
+    """Plot a planned path on the grid."""
+    import matplotlib.pyplot as plt
+    grid = np.zeros((rows, cols))
+
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.imshow(grid, cmap='gray_r', vmin=-1, vmax=1, alpha=0.3)
+
+    path_r = [s // cols for s in path]
+    path_c = [s % cols for s in path]
+    ax.plot(path_c, path_r, 'b.-', markersize=8, linewidth=1.5)
+    ax.plot(path_c[0], path_r[0], 'go', markersize=12, label='Start')
+    ax.plot(path_c[-1], path_r[-1], 'r*', markersize=15, label='Goal')
+
+    for bs in barrier_states:
+        br, bc = bs // cols, bs % cols
+        ax.plot(bc, br, 'ks', markersize=8)
+
+    ax.set_title(title)
+    ax.legend()
+    plt.tight_layout()
+    plt.savefig(filename, dpi=150)

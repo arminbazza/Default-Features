@@ -7,7 +7,8 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 from utils import (create_transition_open, get_complete_DR, save_model_weights,
-                   sample_transition, make_maze)
+                   sample_transition, make_maze, plan_with_D, evaluate_planning, 
+                   evaluate_planning_barrier_crossing, visualize_path, load_model_weights)
 from networks.repair import RepairNetworkLinear
 
 
@@ -15,7 +16,7 @@ ROWS, COLS = 20, 20
 NUM_STATES = ROWS * COLS
 COST = 0.1
 # Hyperparameters
-RANK = 20
+RANK = 64
 LR = 1e-3
 TAU = 0.005
 NUM_STEPS = 25000
@@ -72,29 +73,38 @@ def visualize_delta(D_os, D_true, delta_D, probe_state, barrier_states, barrier_
     plt.savefig(f'../figs/baseline_{barrier_type}_correction_locality.png', dpi=150)
 
 
-def train_repair_network(model, target_model, optimizer, D_os_tensor, T_new, barrier_states, device):
+def train_repair_network(model, target_model, optimizer, D_os_tensor, T_new, 
+                         barrier_states, device, delta_true, use_true=False):
     valid_states = [s for s in range(NUM_STATES) if s not in barrier_states]
     eye = torch.eye(NUM_STATES, device=device)
     losses = []
-
+    
     for step in tqdm(range(NUM_STEPS)):
         batch_states = np.random.choice(valid_states, size=BATCH_SIZE)
         batch_next = np.array([sample_transition(T_new, s) for s in batch_states])
 
         D_os_s = D_os_tensor[batch_states]
         D_os_sp = D_os_tensor[batch_next]
+        
+        # Use ground truth
+        if use_true:
+            delta_s = model(D_os_s)
+            target = delta_true[batch_states]
+            loss = nn.functional.mse_loss(delta_s, target)
+        
+        else:
+            delta_s = model(D_os_s)
+            with torch.no_grad():
+                delta_sp = target_model(D_os_sp)
 
-        delta_s = model(D_os_s)
-        with torch.no_grad():
-            delta_sp = target_model(D_os_sp)
+            D_s = D_os_s + delta_s
+            D_sp_target = D_os_sp + delta_sp
 
-        D_s = D_os_s + delta_s
-        D_sp_target = D_os_sp + delta_sp
+            onehot_s = eye[batch_states]
+            target = GAMMA * onehot_s + GAMMA * D_sp_target
 
-        onehot_s = eye[batch_states]
-        target = onehot_s + GAMMA * D_sp_target
-
-        loss = nn.functional.mse_loss(D_s, target)
+            loss = nn.functional.mse_loss(D_s, target)
+            
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -157,10 +167,43 @@ def evaluate_repair_network(model, D_os_tensor, D_os, D_true, probe_state, barri
     print("  Saved loss curve image")
 
     print("\nDone!")
+    
+
+def planning_evaluation(D_learned, D_os, D_true, T_new, barrier_states, barrier_type):
+    start_state = 0
+    goal_state = NUM_STATES - 1
+
+    print("\n--- Single path: top-left to bottom-right ---")
+    steps_true, path_true = plan_with_D(D_true, T_new, goal_state, start_state)
+    print(f"  Ground truth:   {steps_true} steps")
+
+    steps_os, path_os = plan_with_D(D_os, T_new, goal_state, start_state)
+    print(f"  No repair:      {steps_os} steps")
+
+    steps_learned, path_learned = plan_with_D(D_learned, T_new, goal_state, start_state)
+    print(f"  Learned repair: {steps_learned} steps")
+
+    visualize_path(path_true, barrier_states,
+                   f'Ground truth ({steps_true} steps)',
+                   f'../figs/path_{barrier_type}_true.png', ROWS, COLS)
+    visualize_path(path_learned, barrier_states,
+                   f'Learned repair ({steps_learned} steps)',
+                   f'../figs/path_{barrier_type}_learned.png', ROWS, COLS)
+
+    print("\n--- Averaged over 200 random trials ---")
+    evaluate_planning(D_true, T_new, barrier_states, "Ground truth")
+    evaluate_planning(D_os, T_new, barrier_states, "No repair (D_os)")
+    evaluate_planning(D_learned, T_new, barrier_states, "Learned repair")
+    
+    print("\n--- Barrier-crossing paths only ---")
+    evaluate_planning_barrier_crossing(D_true, T_new, barrier_states, "Ground truth", ROWS, COLS)
+    evaluate_planning_barrier_crossing(D_os, T_new, barrier_states, "No repair (D_os)", ROWS, COLS)
+    evaluate_planning_barrier_crossing(D_learned, T_new, barrier_states, "Learned repair", ROWS, COLS)
 
 
 def main(get_rank=False, delta_vis=False, save_model=False,
-         train_repair=True, eval_repair=False, barrier_type='horizontal'):
+         train_repair=True, eval_repair=False, eval_planning=True,
+         barrier_type='horizontal', load_pretrained=False):
     """Main function"""
     print(f"Computing D_os for {barrier_type} barrier {ROWS}x{COLS} grid...")
     T_os = create_transition_open(shape=(ROWS, COLS))
@@ -172,7 +215,6 @@ def main(get_rank=False, delta_vis=False, save_model=False,
     D_true = get_complete_DR(T=T_new)
     delta_D = D_true - D_os
 
-    # Probe state for visualization: one row above the middle barrier cell
     mid_barrier = barrier_states[len(barrier_states) // 2]
     probe_state = mid_barrier - COLS
 
@@ -182,26 +224,50 @@ def main(get_rank=False, delta_vis=False, save_model=False,
     if delta_vis:
         visualize_delta(D_os, D_true, delta_D, probe_state, barrier_states, barrier_type)
 
-    if train_repair:
-        print("\nTraining repair network...")
-        device = torch.device('mps')
+    device = torch.device('mps')
+    D_os_tensor = torch.tensor(D_os, dtype=torch.float32, device=device)
+    delta_true = torch.tensor(D_true - D_os, dtype=torch.float32, device=device)
+    model = RepairNetworkLinear(input_dim=NUM_STATES, output_dim=NUM_STATES, hidden_dim=RANK).to(device)
+    losses = None
 
-        model = RepairNetworkLinear(num_states=NUM_STATES, hidden_dim=RANK).to(device)
+    pretrained_path = f'networks/saved/{barrier_type}Barrier.pt'
+
+    if load_pretrained:
+        model = load_model_weights(model, pretrained_path)
+        model.to(device)
+        print("  Skipping training, using pretrained model.")
+
+    elif train_repair:
+        print("\nTraining repair network...")
         target_model = copy.deepcopy(model)
         optimizer = torch.optim.Adam(model.parameters(), lr=LR)
+        losses = train_repair_network(model, target_model, optimizer, D_os_tensor, T_new, 
+                                      barrier_states, device, delta_true, use_true=False)
 
-        D_os_tensor = torch.tensor(D_os, dtype=torch.float32, device=device)
-
-        losses = train_repair_network(model, target_model, optimizer, D_os_tensor, T_new, barrier_states, device)
-        print("\nEvaluating repair network...")
+        if save_model:
+            save_model_weights(model, path=pretrained_path)
 
     if eval_repair:
-        evaluate_repair_network(model, D_os_tensor, D_os, D_true, probe_state, barrier_states, losses, barrier_type)
-
-    if save_model:
-        save_model_weights(model, path=f'src/networks/saved/{barrier_type}Barrier.pt')
+        evaluate_repair_network(model, D_os_tensor, D_os, D_true, probe_state,
+                                barrier_states, losses, barrier_type)
+        
+    if eval_planning:
+        D_learned = D_os + model(D_os_tensor).detach().cpu().numpy()
+        # Zero out small corrections
+        delta = D_learned - D_os
+        delta_norms = np.linalg.norm(delta, axis=1)
+        threshold = np.percentile(delta_norms, 95)  # keep top 25% of corrections
+        mask = delta_norms > threshold
+        delta[~mask] = 0
+        D_learned = D_os + delta
+        # Check correction magnitude far from barrier
+        print("Correction norm at (0,0):", np.linalg.norm(D_learned[0] - D_os[0]))
+        print("Correction norm at (19,19):", np.linalg.norm(D_learned[399] - D_os[399]))
+        print("Correction norm near barrier:", np.linalg.norm(D_learned[190] - D_os[190]))
+        planning_evaluation(D_learned, D_os, D_true, T_new, barrier_states, barrier_type)
 
 
 if __name__ == '__main__':
-    main(get_rank=False, delta_vis=False, save_model=True,
-         train_repair=True, eval_repair=True, barrier_type='L')
+    main(get_rank=False, delta_vis=False, save_model=False,
+         train_repair=True, eval_repair=False, eval_planning=True,
+         barrier_type='H', load_pretrained=False)
