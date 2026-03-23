@@ -234,6 +234,7 @@ def evaluate_planning_barrier_crossing(D, T, barrier_states, name,
     print(f"  {name:30s} | avg: {avg:7.1f} | median: {median:5.1f} | success: {success:.2f}")
     return all_steps
 
+
 def visualize_path(path, barrier_states, title, filename, rows, cols):
     """Plot a planned path on the grid."""
     import matplotlib.pyplot as plt
