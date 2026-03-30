@@ -166,7 +166,7 @@ def plan_with_D(D, T, goal_state, start_state, max_steps=500):
     values = np.full(N, -np.inf)
     for i, s in enumerate(nonterminal):
         values[s] = v[i]
-    values[goal_state] = 0.0
+    values[goal_state] = 10.0
 
     state = start_state
     path = [state]
@@ -179,6 +179,60 @@ def plan_with_D(D, T, goal_state, start_state, max_steps=500):
         state = neighbors[np.argmax(values[neighbors])]
         path.append(state)
 
+    return max_steps, path
+
+
+import numpy as np
+
+
+def plan_with_woodbury_features(U_os, Lambda, phi_C, psi_R, A, T, 
+                                 goal_state, start_state, max_steps=500):
+    """
+    Plan using Woodbury components in feature space WITHOUT reconstructing D.
+    """
+    N = U_os.shape[0]
+    nonterminal = [s for s in range(N) if s != goal_state]
+    nt_idx = np.array(nonterminal)
+    
+    # t vector: transition probs from nonterminal states to goal
+    t = T[np.ix_(nonterminal, [goal_state])].flatten()
+    
+    # Features at nonterminal states only
+    U_nt = U_os[nt_idx, :]  # (N-1) x d
+    
+    # Base planning vector (d-dimensional)
+    w_base = Lambda @ (U_nt.T @ t)
+    
+    # Barrier correction (all in small spaces: O-dim and d-dim)
+    z_barrier = psi_R @ w_base              # O-dimensional
+    correction = Lambda @ phi_C @ A @ z_barrier  # d-dimensional
+    
+    # Combined planning vector
+    w_total = w_base + correction  # d-dimensional
+    
+    # Compute exp(v*) for all nonterminal states at once
+    exp_v = U_nt @ w_total  # (N-1)-dimensional
+    
+    exp_v = np.maximum(exp_v, 1e-10)
+    v = np.log(exp_v)
+    
+    # Map back to state indices
+    values = np.full(N, -np.inf)
+    for i, s in enumerate(nonterminal):
+        values[s] = v[i]
+    values[goal_state] = 10.0
+    
+    # Greedy planning
+    state = start_state
+    path = [state]
+    for step in range(max_steps):
+        if state == goal_state:
+            return step, path
+        neighbors = np.where(T[state] > 0)[0]
+        if len(neighbors) == 0:
+            break
+        state = neighbors[np.argmax(values[neighbors])]
+        path.append(state)
     return max_steps, path
 
 

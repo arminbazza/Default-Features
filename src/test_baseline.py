@@ -1,4 +1,5 @@
 import copy
+import os
 
 import numpy as np
 import torch
@@ -7,9 +8,10 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 from utils import (create_transition_open, get_complete_DR, save_model_weights,
-                   sample_transition, make_maze, plan_with_D, evaluate_planning, 
+                   sample_transition, make_maze, plan_with_D, evaluate_planning,
                    evaluate_planning_barrier_crossing, visualize_path, load_model_weights)
 from networks.repair import RepairNetworkLinear
+from networks.sr_is import Baseline_SR_IS
 
 
 ROWS, COLS = 20, 20
@@ -17,9 +19,9 @@ NUM_STATES = ROWS * COLS
 COST = 0.1
 # Hyperparameters
 RANK = 64
-LR = 1e-3
+LR = 0.001
 TAU = 0.005
-NUM_STEPS = 25000
+NUM_STEPS = 250000
 BATCH_SIZE = 256
 GAMMA = np.exp(-COST)  # discount = exp(-c) since cost is uniform
 
@@ -114,8 +116,8 @@ def train_repair_network(model, target_model, optimizer, D_os_tensor, T_new,
 
         losses.append(loss.item())
 
-        if (step + 1) % 5000 == 0:
-            print(f"  Step {step+1}/{NUM_STEPS}, Loss: {loss.item():.6f}")
+        # if (step + 1) % 5000 == 0:
+        #     print(f"  Step {step+1}/{NUM_STEPS}, Loss: {loss.item():.6f}")
 
     return losses
 
@@ -169,7 +171,31 @@ def evaluate_repair_network(model, D_os_tensor, D_os, D_true, probe_state, barri
     print("\nDone!")
     
 
-def planning_evaluation(D_learned, D_os, D_true, T_new, barrier_states, barrier_type):
+def train_sr_is(T_new, barrier_type, save_dr=True, load_pretrained=False):
+    """Train Baseline_SR_IS on T_new via TD learning. Saves/loads the DR as a .npy file."""
+    dr_path = f'networks/saved/{barrier_type}Barrier_SRIS_DR.npy'
+
+    if load_pretrained and os.path.exists(dr_path):
+        D_sr_is = np.load(dr_path)
+        print(f"  Loaded SR-IS DR from {dr_path}")
+        return D_sr_is
+
+    print(f"\nTraining SR-IS model ({NUM_STEPS:,} steps)...")
+    agent = Baseline_SR_IS(
+        T=T_new, reward=-COST, alpha=LR, num_steps=NUM_STEPS,
+        policy="random", shape=(ROWS, COLS)
+    )
+    agent.learn()
+
+    if save_dr:
+        os.makedirs(os.path.dirname(dr_path), exist_ok=True)
+        np.save(dr_path, agent.DR)
+        print(f"  Saved SR-IS DR to {dr_path}")
+
+    return agent.DR
+
+
+def planning_evaluation(D_learned, D_os, D_true, T_new, barrier_states, barrier_type, D_sr_is=None):
     start_state = 0
     goal_state = NUM_STATES - 1
 
@@ -183,27 +209,40 @@ def planning_evaluation(D_learned, D_os, D_true, T_new, barrier_states, barrier_
     steps_learned, path_learned = plan_with_D(D_learned, T_new, goal_state, start_state)
     print(f"  Learned repair: {steps_learned} steps")
 
+    if D_sr_is is not None:
+        steps_sr_is, path_sr_is = plan_with_D(D_sr_is, T_new, goal_state, start_state)
+        print(f"  SR-IS:          {steps_sr_is} steps")
+
     visualize_path(path_true, barrier_states,
                    f'Ground truth ({steps_true} steps)',
                    f'../figs/path_{barrier_type}_true.png', ROWS, COLS)
     visualize_path(path_learned, barrier_states,
                    f'Learned repair ({steps_learned} steps)',
                    f'../figs/path_{barrier_type}_learned.png', ROWS, COLS)
+    if D_sr_is is not None:
+        visualize_path(path_sr_is, barrier_states,
+                       f'SR-IS ({steps_sr_is} steps)',
+                       f'../figs/path_{barrier_type}_sr_is.png', ROWS, COLS)
 
     print("\n--- Averaged over 200 random trials ---")
     evaluate_planning(D_true, T_new, barrier_states, "Ground truth")
     evaluate_planning(D_os, T_new, barrier_states, "No repair (D_os)")
     evaluate_planning(D_learned, T_new, barrier_states, "Learned repair")
-    
+    if D_sr_is is not None:
+        evaluate_planning(D_sr_is, T_new, barrier_states, "SR-IS")
+
     print("\n--- Barrier-crossing paths only ---")
     evaluate_planning_barrier_crossing(D_true, T_new, barrier_states, "Ground truth", ROWS, COLS)
     evaluate_planning_barrier_crossing(D_os, T_new, barrier_states, "No repair (D_os)", ROWS, COLS)
     evaluate_planning_barrier_crossing(D_learned, T_new, barrier_states, "Learned repair", ROWS, COLS)
+    if D_sr_is is not None:
+        evaluate_planning_barrier_crossing(D_sr_is, T_new, barrier_states, "SR-IS", ROWS, COLS)
 
 
 def main(get_rank=False, delta_vis=False, save_model=False,
          train_repair=True, eval_repair=False, eval_planning=True,
-         barrier_type='horizontal', load_pretrained=False):
+         barrier_type='H', load_pretrained=False,
+         run_sr_is=True, load_sr_is=False):
     """Main function"""
     print(f"Computing D_os for {barrier_type} barrier {ROWS}x{COLS} grid...")
     T_os = create_transition_open(shape=(ROWS, COLS))
@@ -241,7 +280,7 @@ def main(get_rank=False, delta_vis=False, save_model=False,
         print("\nTraining repair network...")
         target_model = copy.deepcopy(model)
         optimizer = torch.optim.Adam(model.parameters(), lr=LR)
-        losses = train_repair_network(model, target_model, optimizer, D_os_tensor, T_new, 
+        losses = train_repair_network(model, target_model, optimizer, D_os_tensor, T_new,
                                       barrier_states, device, delta_true, use_true=False)
 
         if save_model:
@@ -250,24 +289,19 @@ def main(get_rank=False, delta_vis=False, save_model=False,
     if eval_repair:
         evaluate_repair_network(model, D_os_tensor, D_os, D_true, probe_state,
                                 barrier_states, losses, barrier_type)
-        
+
+    D_sr_is = None
+    if run_sr_is:
+        D_sr_is = train_sr_is(T_new, barrier_type, save_dr=True, load_pretrained=load_sr_is)
+
     if eval_planning:
         D_learned = D_os + model(D_os_tensor).detach().cpu().numpy()
-        # Zero out small corrections
-        delta = D_learned - D_os
-        delta_norms = np.linalg.norm(delta, axis=1)
-        threshold = np.percentile(delta_norms, 95)  # keep top 25% of corrections
-        mask = delta_norms > threshold
-        delta[~mask] = 0
-        D_learned = D_os + delta
-        # Check correction magnitude far from barrier
-        print("Correction norm at (0,0):", np.linalg.norm(D_learned[0] - D_os[0]))
-        print("Correction norm at (19,19):", np.linalg.norm(D_learned[399] - D_os[399]))
-        print("Correction norm near barrier:", np.linalg.norm(D_learned[190] - D_os[190]))
-        planning_evaluation(D_learned, D_os, D_true, T_new, barrier_states, barrier_type)
+        planning_evaluation(D_learned, D_os, D_true, T_new, barrier_states, barrier_type,
+                            D_sr_is=D_sr_is)
 
 
 if __name__ == '__main__':
     main(get_rank=False, delta_vis=False, save_model=False,
          train_repair=True, eval_repair=False, eval_planning=True,
-         barrier_type='H', load_pretrained=False)
+         barrier_type='H', load_pretrained=False,
+         run_sr_is=False, load_sr_is=True)
