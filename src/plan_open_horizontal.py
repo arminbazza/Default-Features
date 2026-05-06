@@ -198,8 +198,8 @@ def main():
 # =============================================================================
 
 def train_and_save(
-    n_train_steps: int = 500_000,
-    eval_every:    int = 10_000,
+    n_train_steps: int = 500_000,# 500_000,
+    eval_every:    int = 10_000,# 10_000,
     n_eval_trials: int = 200,
     eval_max_steps: int = 1_000,
     save_dir: str = "../data/planning_open/horizontal/",
@@ -348,7 +348,7 @@ def train_and_save(
     # ------------------------------------------------------------------
     # 5. Save
     # ------------------------------------------------------------------
-    save_path = os.path.join(save_dir, "learning_curves_TEST.npz")
+    save_path = os.path.join(save_dir, "learning_curves_highlr.npz")
     np.savez(save_path,
              checkpoint_steps=checkpoint_steps,
              **records)
