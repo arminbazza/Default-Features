@@ -273,7 +273,6 @@ def train_and_save(
         
         T_os = create_transition_open(shape=(ROWS, COLS))
         D_os = get_complete_DR(T=T_os)
-        # D_os = (D_os + D_os.T) / 2
 
         T_train = make_absorbing(T_base, goal)
         D_train = get_complete_DR(T_train)
