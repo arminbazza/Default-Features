@@ -253,7 +253,6 @@ def train_and_save(
     print_header("TRAIN & SAVE  –  open-field → L-barrier")
     T_os = create_transition_open(shape=(ROWS, COLS))
     D_os = get_complete_DR(T=T_os)
-    # D_os = (D_os + D_os.T) / 2
 
     h_edges = h_wall_edges(ROWS, COLS,
                             barrier_row=CORNER_ROW,

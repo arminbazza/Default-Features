@@ -230,7 +230,6 @@ def train_and_save(
     print_header("TRAIN & SAVE  –  open-field → horizontal barrier")
     T_os = create_transition_open(shape=(ROWS, COLS))
     D_os = get_complete_DR(T=T_os)
-    D_os = (D_os + D_os.T) / 2
 
     wall_edges = h_wall_edges(ROWS, COLS,
                                barrier_row=BARRIER_ROW,
@@ -302,7 +301,7 @@ def train_and_save(
         # --- woodbury_td ---
         M_td = woodbury_td(F, T_new, emc, lam,
                            valid_states=np.arange(ROWS * COLS),
-                           grad_type="full",
+                           grad_type="semi",
                            n_samples=eval_every,
                            lr=LR,
                            seed=train_seed,
