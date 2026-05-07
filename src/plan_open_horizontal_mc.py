@@ -40,8 +40,8 @@ K_PLANNING_VALS = [5, 10, 20, 50]
 # =============================================================================
 
 def train_and_save(
-    n_train_steps:  int = 250_000,
-    eval_every:     int = 10_000,
+    n_train_steps:  int = 50_000,
+    eval_every:     int = 1_000,
     n_eval_trials:  int = 200,
     eval_max_steps: int = 1_000,
     save_dir:       str = "../data/planning_open/horizontal_mc/",
