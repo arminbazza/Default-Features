@@ -7,8 +7,12 @@ __pycache__/
 **/.DS_Store
 .ipynb_checkpoints/
 .vscode/
+.claud/
 
 compositional_maps.egg-info/
 
 src/figs/
 figs/
+figures/
+data/
+notes/
