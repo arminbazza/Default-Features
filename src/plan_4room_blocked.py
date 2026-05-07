@@ -1,30 +1,3 @@
-"""
-Four-room planning with a fully blocked (inaccessible) doorway state.
-
-Environment: 11x11 four-room grid (same layout as plan_4room_wall.py).
-Start: state 0 = (0,0) — top-left corner of TL room (fixed).
-
-Protocol (per scenario):
-  1. Make goal absorbing → T_train.  Compute D_train, F, lam, ec, emc.
-  2. Remove the doorway state entirely → T_new.
-     (place_barrier zeros the entire row AND column of the doorway state,
-      making it completely inaccessible from all neighbouring states.)
-  3. Compute all 5 models using T_train as 'old' and T_new as 'new'.
-  4. Plan from START to goal under T_new; record steps.
-
-Scenarios
----------
-  BL : goal = 110 = (10,0)  [bottom-left of BL room]
-       blocks state (5,3)=58  — TL <-> BL doorway
-
-  TR : goal = 10  = (0,10)  [top-right of TR room]
-       blocks state (2,5)=27  — TL <-> TR doorway
-
-Only BL is active by default.  Change ACTIVE in main() to run TR or both.
-
-Run from repo root: python src/plan_4room_blocked.py
-"""
-
 import os
 import sys
 
@@ -36,7 +9,6 @@ from utils import (
     make_four_room,
     make_absorbing,
     place_barrier,
-    place_walls,
     plan_with_M,
     plan_with_D,
     plan_with_SR,

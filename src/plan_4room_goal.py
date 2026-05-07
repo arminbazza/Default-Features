@@ -1,29 +1,3 @@
-"""
-Four-room planning comparison.
-
-Environment: 11x11 four-room grid (5x5 rooms, cross-shaped wall with doorways).
-
-Start:  state 0 = (0, 0)  — top-left corner of TL room (fixed).
-
-Goals:  9 outer corners — 3 per non-TL room (on the grid boundary):
-  TR room (rows 0-4, cols 6-10) : (0,6)=6,   (0,10)=10,  (4,10)=54
-  BL room (rows 6-10, cols 0-4) : (6,0)=66,  (10,0)=110, (10,4)=114
-  BR room (rows 6-10, cols 6-10): (6,10)=76, (10,6)=116, (10,10)=120
-
-Protocol (per training goal g_train):
-  1. Build T_train = four-room T with g_train absorbing.
-  2. Compute D_train, then F / lam / ec / emc from D_train.
-  3. For each of the 8 remaining goals g_test:
-       - T_new = four-room T with g_test absorbing (g_train restored).
-       - Derive or learn updated representation w.r.t. T_new.
-       - Plan from START to g_test; record steps.
-  4. Aggregate: same-room (2 goals) vs. different-room (6 goals).
-
-Step 8: Run one training goal first to verify end-to-end correctness.
-
-Run from repo root: python src/planning_four_room.py
-"""
-
 import os
 import sys
 
