@@ -23,7 +23,7 @@ from models import build_features, woodbury_feat, woodbury_full, woodbury_td, sr
 ROWS, COLS = 15, 15
 K          = ROWS * COLS
 N_SAMPLES  = 400_000
-LR         = 0.001
+LR         = 0.01
 N_TRIALS   = 300
 MAX_STEPS  = 500
 TEMP       = 0.2
@@ -198,8 +198,8 @@ def main():
 # =============================================================================
 
 def train_and_save(
-    n_train_steps: int = 500_000,# 500_000,
-    eval_every:    int = 10_000,# 10_000,
+    n_train_steps: int = 50_000,
+    eval_every:    int = 1_000,
     n_eval_trials: int = 200,
     eval_max_steps: int = 1_000,
     save_dir: str = "../data/planning_open/horizontal/",
@@ -301,7 +301,7 @@ def train_and_save(
         # --- woodbury_td ---
         M_td = woodbury_td(F, T_new, emc, lam,
                            valid_states=np.arange(ROWS * COLS),
-                           grad_type="semi",
+                           grad_type="full",
                            n_samples=eval_every,
                            lr=LR,
                            seed=train_seed,
