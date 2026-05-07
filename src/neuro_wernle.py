@@ -134,7 +134,7 @@ C_w = np.eye(N)[:,delta]
 A_w = inv(np.eye(len(delta)) - R_w @ D_os @ C_w)
  
 F_divided = F + D_os @ C_w @ A_w @ R_w @ F  # features WITH wall
-np.save(DATA_DIR+'F_divided_LARGE.npy', F_divided)
+np.save(DATA_DIR+'F_divided.npy', F_divided)
 
 # M = woodbury_td(F_divided, T_os, emc, lam, grad_type='semi',
 #                        n_total_samples=500_000, lr=LR,
@@ -143,7 +143,7 @@ M = woodbury_td_uniform(F_divided, T_os, emc, lam, grad_type='semi',
                        n_total_samples=500_000, lr=LR,
                        log_every=100_000)
 F_merged = F_divided @ M
-np.save(DATA_DIR+f"F_merged_lr{LR}_c{COST}.npy", F_merged)
+np.save(DATA_DIR+f"F_merged.npy", F_merged)
 
 print(f"F_divided: {F_divided.shape}, F_merged: {F_merged.shape}")
 
