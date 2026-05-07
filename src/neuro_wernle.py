@@ -1,20 +1,18 @@
 import os
 import numpy as np
-from pymatreader import read_mat
-from numpy.linalg import inv, norm, eigh, svd
+from numpy.linalg import inv, eigh
 from scipy.stats import spearmanr
-from scipy.io import savemat
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-from utils import create_transition_open, get_complete_DR
+from utils import create_transition_open
 
 ROWS, COLS, SPLIT = 20, 20, 10
 N = ROWS*COLS
 COST = 0.01
 LR = 0.001
-K = 400  
+K = N  
 
 SAVE_DIR = '../figures/wernle_reverse/'
 DATA_DIR = '../data/wernle/'
@@ -136,8 +134,7 @@ C_w = np.eye(N)[:,delta]
 A_w = inv(np.eye(len(delta)) - R_w @ D_os @ C_w)
  
 F_divided = F + D_os @ C_w @ A_w @ R_w @ F  # features WITH wall
-np.save(DATA_DIR+'F_divided.npy', F_divided)
-# F_merged = F                                # features WITHOUT wall
+np.save(DATA_DIR+'F_divided_LARGE.npy', F_divided)
 
 # M = woodbury_td(F_divided, T_os, emc, lam, grad_type='semi',
 #                        n_total_samples=500_000, lr=LR,
@@ -192,7 +189,7 @@ axes[1].set_title('Row profile'); axes[1].legend()
 axes[1].set_ylim([vmin, vmax])
  
 plt.tight_layout()
-plt.savefig(SAVE_DIR+f"wernle_semi_lr{LR}_c{COST}_TEST.png", dpi=150, bbox_inches='tight')
+plt.savefig(SAVE_DIR+f"wernle_semi_lr{LR}_c{COST}.png", dpi=150, bbox_inches='tight')
 plt.close()
 
 # Individual features
@@ -213,7 +210,7 @@ for row, k in enumerate(feat_indices):
     for ax in axes[row]: ax.set_xticks([]); ax.set_yticks([])
  
 plt.tight_layout()
-plt.savefig(SAVE_DIR+f"wernle_features_semi_lr{LR}_c{COST}_TEST.png", dpi=150, bbox_inches='tight')
+plt.savefig(SAVE_DIR+f"wernle_features_lr{LR}_c{COST}.png", dpi=150, bbox_inches='tight')
 plt.close()
  
 print("Plots saved.")
