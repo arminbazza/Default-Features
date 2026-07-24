@@ -21,7 +21,7 @@ from models import build_features, woodbury_feat, woodbury_full, woodbury_td, sr
 # =============================================================================
 ROWS, COLS = 11, 11
 K          = ROWS * COLS   # full-rank features (121); lower for speed
-N_SAMPLES  = 400_000
+N_SAMPLES  = 20_000
 LR         = 0.01
 MAX_STEPS  = 500
 TEMP       = 0.2
@@ -223,26 +223,13 @@ def main():
         diff_mean = np.mean(res_one[name]['diff']) if res_one[name]['diff'] else float('nan')
         print(f"  {name:<20s}  {same_mean:>14.1f}  {diff_mean:>14.1f}")
 
-    print("\n  [Step 8 complete — uncomment the loop below to run all 9 goals]")
-
-    # -------------------------------------------------------------------------
-    # Full loop over all 9 training goals (uncomment when step 8 passes)
-    # -------------------------------------------------------------------------
-    # print_header("Full run: all 9 training goals")
-    # all_results = {}
-    # for i, g_train in enumerate(ALL_GOALS):
-    #     print_header(f"Training goal {i+1}/9: state {g_train} ({ROOM_OF_GOAL[g_train]})")
-    #     all_results[g_train] = run_one_training_goal(g_train, T_base)
-    # print_summary(all_results)
-
-
 # =============================================================================
 # LEARNING-CURVE DATA COLLECTION
 # =============================================================================
 
 def train_and_save(
-    n_train_steps:  int = 20_000, # 500_000,
-    eval_every:     int = 500, # 10_000,
+    n_train_steps:  int = 20_000,
+    eval_every:     int = 500,
     n_eval_trials:  int = 20,
     eval_max_steps: int = 1_000,
     save_dir:       str = "../data/planning_4room/goal/",
@@ -403,7 +390,7 @@ def train_and_save(
     # ------------------------------------------------------------------
     # 5. Save
     # ------------------------------------------------------------------
-    save_path = os.path.join(save_dir, "learning_curves_highlr.npz")
+    save_path = os.path.join(save_dir, "learning_curves_highlr_newsf.npz")
     save_kwargs = {
         'checkpoint_steps': checkpoint_steps,
         'same_pairs':       np.array(same_pairs),
