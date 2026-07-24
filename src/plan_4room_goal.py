@@ -109,7 +109,7 @@ def run_one_training_goal(g_train, T_base):
         print("        woodbury_td ...", end=' ', flush=True)
         M_td = woodbury_td(F, T_new, emc, lam,
                            valid_states=valid_td,
-                           grad_type='semi',
+                           grad_type='full',
                            n_samples=N_SAMPLES, lr=LR, seed=SEED)
         print("done")
 
@@ -348,7 +348,7 @@ def train_and_save(
                 train_seed = SEED + chunk * 1009
 
                 M_td = woodbury_td(F, T_new, emc, lam,
-                                   valid_states=valid_td, grad_type='semi',
+                                   valid_states=valid_td, grad_type='full',
                                    n_samples=eval_every, lr=LR,
                                    seed=train_seed, init_M=M_td)
                 D_sr = sr_td(T_new, emc, valid_states=valid_td,
