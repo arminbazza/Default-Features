@@ -20,6 +20,7 @@ from models import build_features, woodbury_feat, woodbury_full, woodbury_td, sr
 # =============================================================================
 # CONFIG
 # =============================================================================
+
 ROWS, COLS = 15, 15
 K          = ROWS * COLS
 N_SAMPLES  = 50_000

@@ -15,6 +15,7 @@ from models import build_features, woodbury_feat, woodbury_td, dyna_q
 # =============================================================================
 # CONFIG
 # =============================================================================
+
 ROWS, COLS = 15, 15
 N_STATES   = ROWS * COLS
 K          = ROWS * COLS

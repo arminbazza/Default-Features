@@ -19,6 +19,7 @@ from models import build_features, woodbury_feat, woodbury_full, woodbury_td, sr
 # =============================================================================
 # CONFIG
 # =============================================================================
+
 ROWS, COLS = 11, 11
 K          = ROWS * COLS   # full-rank features (121); lower for speed
 N_SAMPLES  = 20_000

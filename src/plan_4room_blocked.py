@@ -20,6 +20,7 @@ from models import build_features, woodbury_feat, woodbury_full, woodbury_td, sr
 # =============================================================================
 # CONFIG
 # =============================================================================
+
 ROWS, COLS = 11, 11
 K          = ROWS * COLS
 N_SAMPLES  = 150_000
@@ -327,7 +328,6 @@ if __name__ == '__main__':
         # Step 1: F from open space (symmetric, clean)
         T_open = create_transition_open(shape=(ROWS, COLS))
         D_open = get_complete_DR(T_open)
-        # D_open = (D_open + D_open.T) / 2
         F, lam, ec, emc = build_features(D_open, k=K)
         print(f"||FF^T - D_open|| / ||D_open|| = {norm(F @ F.T - D_open) / norm(D_open):.2e}")
 
