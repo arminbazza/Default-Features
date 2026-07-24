@@ -118,7 +118,7 @@ def main():
     print(f"\n  [woodbury_td] running {N_SAMPLES:,} TD steps ...")
     M_td = woodbury_td(F, T_new, emc, lam,
                  valid_states=np.arange(ROWS * COLS),
-                 grad_type="semi",
+                 grad_type="full",
                  n_samples=N_SAMPLES,
                  lr=LR,
                  seed=SEED,
