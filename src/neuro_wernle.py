@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 
 from utils import create_transition_open
 
-ROWS, COLS, SPLIT = 20, 20, 10
+ROWS, COLS, SPLIT = 30, 30, 15
 N = ROWS*COLS
 COST = 0.01
 LR = 0.001
@@ -134,7 +134,7 @@ C_w = np.eye(N)[:,delta]
 A_w = inv(np.eye(len(delta)) - R_w @ D_os @ C_w)
  
 F_divided = F + D_os @ C_w @ A_w @ R_w @ F  # features WITH wall
-np.save(DATA_DIR+'F_divided.npy', F_divided)
+np.save(DATA_DIR+'F_divided_30.npy', F_divided)
 
 # M = woodbury_td(F_divided, T_os, emc, lam, grad_type='semi',
 #                        n_total_samples=500_000, lr=LR,
@@ -143,7 +143,7 @@ M = woodbury_td_uniform(F_divided, T_os, emc, lam, grad_type='semi',
                        n_total_samples=500_000, lr=LR,
                        log_every=100_000)
 F_merged = F_divided @ M
-np.save(DATA_DIR+f"F_merged.npy", F_merged)
+np.save(DATA_DIR+f"F_merged_30.npy", F_merged)
 
 print(f"F_divided: {F_divided.shape}, F_merged: {F_merged.shape}")
 
@@ -171,46 +171,3 @@ distal_rows = list(range(3)) + list(range(ROWS-3, ROWS))
 print(f"Wall-adjacent: {np.nanmean(rp[wall_rows]):.3f}")
 print(f"Distal: {np.nanmean(rp[distal_rows]):.3f}")
 print(f"Effect: {np.nanmean(rp[distal_rows]) - np.nanmean(rp[wall_rows]):.3f}")
-
-# ---- Plots ----
-# Correlation heatmap
-fig, axes = plt.subplots(1, 2, figsize=(10, 4))
-vmin = mm.min()
-vmax = mm.max()
-im = axes[0].imshow(mm, cmap='jet', origin='lower', vmin=vmin, vmax=vmax)
-axes[0].set_title(f'Correlation heatmap (cost={COST})')
-axes[0].set_xlabel('Column'); axes[0].set_ylabel('Row')
-plt.colorbar(im, ax=axes[0], shrink=0.8)
- 
-axes[1].plot(rp, 'b-o', markersize=4)
-axes[1].axvline(x=SPLIT-0.5, color='red', linestyle='--', alpha=0.5, label='Wall')
-axes[1].set_xlabel('Row'); axes[1].set_ylabel('Mean Spearman r')
-axes[1].set_title('Row profile'); axes[1].legend()
-axes[1].set_ylim([vmin, vmax])
- 
-plt.tight_layout()
-plt.savefig(SAVE_DIR+f"wernle_semi_lr{LR}_c{COST}.png", dpi=150, bbox_inches='tight')
-plt.close()
-
-# Individual features
-feat_indices = [5, 8, 10, 12, 15, 18, 25, 30, 35, 40, 45, 50]
-n_feat = len(feat_indices)
-fig, axes = plt.subplots(n_feat, 3, figsize=(10, 3*n_feat))
-for row, k in enumerate(feat_indices):
-    map_b = F_divided[:, k].reshape(ROWS, COLS)
-    map_a = F_merged[:, k].reshape(ROWS, COLS)
-    map_c = corr[:, k].reshape(ROWS, COLS)
-    axes[row,0].imshow(map_b, origin='lower', cmap='jet')
-    axes[row,0].set_title(f'F_divided (feat {k})')
-    axes[row,1].imshow(map_a, origin='lower', cmap='jet')
-    axes[row,1].set_title(f'F_merged (feat {k})')
-    im = axes[row,2].imshow(map_c, origin='lower', cmap='jet', vmin=np.min(corr[:,k]), vmax=np.max(corr[:,k]))
-    axes[row,2].set_title(f'Corr (feat {k})')
-    plt.colorbar(im, ax=axes[row,2], shrink=0.8)
-    for ax in axes[row]: ax.set_xticks([]); ax.set_yticks([])
- 
-plt.tight_layout()
-plt.savefig(SAVE_DIR+f"wernle_features_lr{LR}_c{COST}.png", dpi=150, bbox_inches='tight')
-plt.close()
- 
-print("Plots saved.")
