@@ -22,7 +22,7 @@ from models import build_features, woodbury_feat, woodbury_full, woodbury_td, sr
 # =============================================================================
 ROWS, COLS = 15, 15
 K          = ROWS * COLS
-N_SAMPLES  = 400_000
+N_SAMPLES  = 50_000
 LR         = 0.01
 N_TRIALS   = 300
 MAX_STEPS  = 500
@@ -133,9 +133,6 @@ def main():
     D_sr_sf = sr_sf(T_new, emc, F, valid_states=np.arange(ROWS*COLS),
                     lr=LR, n_samples=N_SAMPLES, seed=SEED,
                     log_every=N_SAMPLES // 5)
-
-    # print(f"\n  [batch_lstq] running batch least squares ...")
-    # M_blsq = batch_lstsq_M(F, T_new, ec, valid_states=np.arange(ROWS*COLS))
 
     # -------------------------------------------------------------------------
     # 5. Evaluate planning
