@@ -22,7 +22,7 @@ from models import build_features, woodbury_feat, woodbury_full, woodbury_td, sr
 # =============================================================================
 ROWS, COLS = 11, 11
 K          = ROWS * COLS
-N_SAMPLES  = 800_000
+N_SAMPLES  = 150_000
 LR         = 0.01
 MAX_STEPS  = 500
 TEMP       = 0.2
@@ -193,8 +193,8 @@ def main():
 # =============================================================================
 
 def train_and_save(
-    n_train_steps:  int = 150_000,# 800_000,
-    eval_every:     int = 2_500,# 10_000,
+    n_train_steps:  int = 150_000,
+    eval_every:     int = 2_500,
     n_eval_trials:  int = 20,
     eval_max_steps: int = 1_000,
     save_dir:       str = "../data/planning_4room/blocked/",
