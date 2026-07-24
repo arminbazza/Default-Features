@@ -520,7 +520,7 @@ def plan_with_SF(Psi, F, lam, T, goal_state, start_state, r_goal=10, max_steps=5
     r = np.zeros(N)
     r[goal_state] = r_goal
 
-    w      = (F.T @ r) / lam   # project reward through F^{-1}
+    w = (F.T @ r) / lam
     values = Psi @ w
 
     state = start_state
