@@ -114,7 +114,7 @@ def run_scenario(scenario_key, T_base):
     print("  woodbury_td ...", end=' ', flush=True)
     M_td = woodbury_td(F, T_new, emc, lam,
                        valid_states=valid_td,
-                       grad_type='semi',
+                       grad_type='full',
                        n_samples=N_SAMPLES, lr=LR, seed=SEED)
     print("done")
 
