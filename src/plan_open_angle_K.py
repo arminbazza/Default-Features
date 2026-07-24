@@ -55,8 +55,8 @@ def print_result(name, mean, median, success):
 # =============================================================================
 
 def train_and_save(
-    n_train_steps: int = 50_000, # 500_000,
-    eval_every:    int = 1_000, # 10_000,
+    n_train_steps: int = 50_000,
+    eval_every:    int = 1_000,
     n_eval_trials: int = 200,
     eval_max_steps: int = 1_000,
     save_dir: str = "../data/planning_open/angle/",
