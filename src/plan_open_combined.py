@@ -18,11 +18,10 @@ from utils import (
 from models import build_features, woodbury_feat, woodbury_full, woodbury_td
 
 # =============================================================================
-# CONFIG   (hyper-parameters kept identical to the open-field scripts)
+# CONFIG
 # =============================================================================
 ROWS, COLS = 15, 15
-K          = ROWS * COLS          # 225
-N_SAMPLES  = 50_000              # outer single-shot budget (main())
+K          = ROWS * COLS
 LR         = 0.01
 N_TRIALS   = 300
 MAX_STEPS  = 500
@@ -33,24 +32,18 @@ SEED       = 42
 # BARRIER GEOMETRY
 # =============================================================================
 
-# -- Layout "horizontal" : two complementary horizontal walls (S-shaped detour) -
-#    W1 sits just BELOW the start block and extends RIGHT from the left wall
-#       (opening on the right).  W2 sits just ABOVE the goal block and extends
-#       LEFT from the right wall (opening on the left).  The two spans tile the
-#       full width (cols 0..6 | 7..14) so no straight vertical corridor exists ->
-#       the agent must go down-right (past W1) then down-left (past W2).
-H1_ROW       = 4       # boundary between rows 3 and 4 (just below start rows 1-3)
+H1_ROW       = 4
 H1_COL_START = 1
-H1_COL_END   = 9       # blocks cols 0..6  -> opening cols 7..14 (right)
-H2_ROW       = 12      # boundary between rows 11 and 12 (just above goal rows 12-14)
-H2_COL_START = 7       # blocks cols 7..14 -> opening cols 0..6 (left)
+H1_COL_END   = 9
+H2_ROW       = 12
+H2_COL_START = 7
 H2_COL_END   = 14
 
 # -- Evaluation regions ------------------------------------------------------
-START_ROW_MIN, START_ROW_MAX = 1, 2      # top band, rows 1-3
-START_COL_MIN, START_COL_MAX = 3, 11     #           cols 3-11
-GOAL_ROW_MIN,  GOAL_ROW_MAX  = 13, 14    # bottom band, rows 12-14
-GOAL_COL_MIN,  GOAL_COL_MAX  = 3, 11     #              cols 3-11
+START_ROW_MIN, START_ROW_MAX = 1, 2
+START_COL_MIN, START_COL_MAX = 3, 11
+GOAL_ROW_MIN,  GOAL_ROW_MAX  = 13, 14
+GOAL_COL_MIN,  GOAL_COL_MAX  = 3, 11
 
 
 # =============================================================================
@@ -108,7 +101,7 @@ def build_environments():
 
 
 # =============================================================================
-# LEARNING-CURVE DATA COLLECTION  (mirrors train_and_save in the open-field scripts)
+# LEARNING-CURVE DATA COLLECTION
 # =============================================================================
 
 def train_and_save(
