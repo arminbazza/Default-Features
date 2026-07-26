@@ -36,7 +36,7 @@ H1_ROW       = 4
 H1_COL_START = 1
 H1_COL_END   = 9
 H2_ROW       = 12
-H2_COL_START = 7
+H2_COL_START = 6
 H2_COL_END   = 14
 
 # -- Evaluation regions ------------------------------------------------------
@@ -221,7 +221,12 @@ def train_and_save(
     np.savez(save_path,
              checkpoint_steps=checkpoint_steps,
              **records,)
+
+    operator_path = os.path.join(save_dir, "M1_M2_td.npz")
+    np.savez(operator_path, M1_td=M1_td, M2_td=M2_td)
+
     print(f"\n  Saved -> {save_path}")
+    print(f"  Saved -> {operator_path}  (M1_td, M2_td: {M1_td.shape})")
     print(f"  Arrays: checkpoint_steps {checkpoint_steps.shape}, "
           f"each model {records['dfr_td_combined'].shape}")
 
