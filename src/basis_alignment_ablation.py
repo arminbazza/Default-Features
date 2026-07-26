@@ -12,15 +12,14 @@ from utils import (create_transition_open, get_complete_DR, place_barrier,
 from models import build_features, woodbury_td, woodbury_full
 
 # ------------------------------------------------------------------ FIXED PARAMS
-LR             = 0.01          # lr for every basis except the random lr-sweep
-GRAD_TYPE      = "full"        # residual gradient -- matches train_and_save()
-TEMP           = 0.2           # softmax planning temperature
-EVAL_MAX_STEPS = 1000          # matches train_and_save() eval_max_steps
-R_GOAL         = 10            # goal reward inside the planner
-EVAL_SEED      = 42            # fixes eval pair selection + softmax rollout RNG
-DEFAULT_SEEDS  = 10            # training seeds (variance); error bars already tight at 10
-INTERP_ALPHAS  = [0.25, 0.5, 0.75]      # synthetic aligned->random interpolation
-RANDOM_LRS     = [0.003, 0.03]          # extra lrs for the random control only
+LR             = 0.01
+TEMP           = 0.2
+EVAL_MAX_STEPS = 1000
+R_GOAL         = 10
+EVAL_SEED      = 42
+DEFAULT_SEEDS  = 10
+INTERP_ALPHAS  = [0.25, 0.5, 0.75]
+RANDOM_LRS     = [0.003, 0.03]
 
 save_dir = "../data/basis_alignment/"
 os.makedirs(save_dir, exist_ok=True)
@@ -29,15 +28,14 @@ RESULTS_PATH = save_dir + "results_basis_ablation.pkl"
 
 # ============================================================ ENVIRONMENT SETUPS
 def build_env(name):
-    """Fixed pieces of an environment (independent of basis / seed)."""
     if name == "horizontal":
         rows = cols = 15
         n = rows * cols
-        T_warm = create_transition_open(shape=(rows, cols))       # pre-perturbation
+        T_warm = create_transition_open(shape=(rows, cols))
         D = get_complete_DR(T=T_warm)
         T_new = place_walls(T_warm, h_wall_edges(rows, cols, barrier_row=rows // 2,
                                                  col_start=3, col_end=12))
-        valid_states = np.arange(n)                               # all reachable
+        valid_states = np.arange(n)
         env = dict(name=name, rows=rows, cols=cols, n=n,
                    n_samples=50_000, eval_every=1_000, n_eval_trials=200,
                    eval_mode="region",
@@ -47,16 +45,16 @@ def build_env(name):
     elif name == "four_room":
         rows = cols = 11
         n = rows * cols
-        goal = 10 * cols + 0                                      # state 110 = (10,0)  [BL scenario]
-        T_base, _walls = make_four_room(rows, cols)               # all doors open
-        T_warm = make_absorbing(T_base, goal)                     # goal absorbing == train_and_save
-        D = get_complete_DR(T=T_warm)                         # warm-start map D_train
-        T_new = place_barrier(T_warm, [5 * cols + 3])             # block TL<->BL door (58)
+        goal = 10 * cols + 0
+        T_base, _walls = make_four_room(rows, cols)
+        T_warm = make_absorbing(T_base, goal)
+        D = get_complete_DR(T=T_warm)
+        T_new = place_barrier(T_warm, [5 * cols + 3])
         valid_states = np.array([s for s in range(n) if T_new[s].sum() > 0])
         env = dict(name=name, rows=rows, cols=cols, n=n,
                    n_samples=150_000, eval_every=2_500, n_eval_trials=20,
                    eval_mode="single_pair",
-                   start=0, goal=goal)                            # START=0 -> goal=110
+                   start=0, goal=goal)
     else:
         raise ValueError(name)
 
@@ -67,21 +65,15 @@ def build_env(name):
 
 # =================================================================== BASIS SETUP
 def make_basis(env, kind):
-    """
-    Return (F, lam, emc, M0).  Every basis warm-started so F @ M0 @ F^T == D_warm
-    exactly (same pre-perturbation map for all).  Each basis carries its OWN
-    (lam, emc) from build_features -- required because r_s = f_s / lam must be
-    consistent with F.
-    """
     n, D_warm = env["n"], env["D_warm"]
     rows, cols = env["rows"], env["cols"]
-    F_base, lam_base, _, emc_base = build_features(D_warm, k=n)   # aligned reference
+    F_base, lam_base, _, emc_base = build_features(D_warm, k=n)
 
     def warm_start(F):
         Finv = np.linalg.inv(F)
         return Finv @ D_warm @ Finv.T
 
-    if kind in ("spectral", "four_room"):                        # aligned -> M0 = I
+    if kind in ("spectral", "four_room"):
         return F_base, lam_base, emc_base, np.eye(n)
 
     if kind == "L_barrier":                       # horizontal: L-shaped barrier env
@@ -143,8 +135,6 @@ def basis_list(env_name):
 
 
 # ======================================================================= EVAL
-# Faithful cached replica of the planners' value computation; _self_test()
-# asserts it matches utils.plan_with_M exactly.
 def _values_M(F, M, T_new, goal, n):
     nt = np.array([s for s in range(n) if s != goal])
     t_vec = T_new[np.ix_(nt, [goal])].flatten()
@@ -228,15 +218,6 @@ def _self_test(env):
 def run_basis(env, kind, seeds, eval_stride=None):
     """
     Multi-seed, checkpointed training for one basis.
-    Returns (steps_axis, results):
-      steps_axis : (n_eval_points,)
-      results    : (n_seeds, n_eval_points, 3) = (mean, median, success)
-    Per-chunk seed depends only on (seed, chunk) -> all bases see the SAME
-    sampled transition sequence per seed (paired comparison).
-
-    eval_stride: evaluate every N chunks.  None/0 -> auto (~20 curve points),
-    which keeps plots smooth while skipping most of the expensive early-checkpoint
-    region evals.  Pass 1 for an eval at every chunk (full-resolution curve).
     """
     F, lam, emc, M0 = make_basis(env, kind)
     lr = basis_lr(kind)
@@ -256,7 +237,7 @@ def run_basis(env, kind, seeds, eval_stride=None):
         ei = 0
         for c in range(1, n_chunks + 1):
             M = woodbury_td(F, env["T_new"], emc, lam,
-                            valid_states=env["valid_states"], grad_type=GRAD_TYPE,
+                            valid_states=env["valid_states"], grad_type='full',
                             n_samples=eval_every, lr=lr,
                             seed=42 + seed * 100_003 + (c - 1) * 1009, init_M=M)
             if c in eval_set:
@@ -291,7 +272,7 @@ def run(env_names, seeds, eval_stride=1):
         res["data"].setdefault(env_name, {})
         res["oracle"][env_name] = evaluate_oracle(env)     # seed-free reference
         print(f"\n=== {env_name}  (N={env['n']}, {env['n_samples']:,} steps, "
-              f"grad={GRAD_TYPE}, {len(seeds)} seeds) ===", flush=True)
+              f"{len(seeds)} seeds) ===", flush=True)
         print(f"  oracle (woodbury_full): mean={res['oracle'][env_name][0]:.1f} "
               f"success={res['oracle'][env_name][2]:.2f}", flush=True)
 
@@ -305,7 +286,7 @@ def run(env_names, seeds, eval_stride=1):
             res["data"][env_name][kind] = dict(steps=steps_axis, results=arr)
             res["meta"][env_name] = dict(
                 n_samples=env["n_samples"], eval_every=env["eval_every"],
-                n=env["n"], lr=LR, grad_type=GRAD_TYPE, temp=TEMP,
+                n=env["n"], lr=LR, grad_type='full', temp=TEMP,
                 eval_max_steps=EVAL_MAX_STEPS, seeds=list(seeds),
                 eval_mode=env["eval_mode"])
             save_results(res)
