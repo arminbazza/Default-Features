@@ -93,7 +93,6 @@ def woodbury_full(T_old, D_os, T_new):
     """
     diffs = T_old != T_new
     delta_locs = np.unique(np.where(diffs)[0])
-    print(delta_locs)
     N = T_old.shape[0]
 
     R = (T_new - T_old)[delta_locs, :]
