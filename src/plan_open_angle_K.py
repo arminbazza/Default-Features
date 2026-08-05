@@ -1,4 +1,6 @@
+import argparse
 import os
+import time
 
 import numpy as np
 
@@ -8,7 +10,16 @@ from utils import (
     place_walls,
     h_wall_edges,
     v_wall_edges,
-    plan_with_M,
+    neighbour_table,
+    values_M,
+    print_header,
+    draw_pairs,
+    spawn_train_seeds,
+    evaluate_pairs,
+    init_records,
+    load_resume,
+    save_records,
+    report_multiseed,
 )
 from models import build_features, woodbury_feat, woodbury_td
 
@@ -17,12 +28,12 @@ from models import build_features, woodbury_feat, woodbury_td
 # =============================================================================
 
 ROWS, COLS = 15, 15
-K          = [50, 75, 100, 125, 150, 175, 200, 220, 225]
+K_VALUES   = [50, 75, 100, 125, 150, 175, 200, 225]
 LR         = 0.01
 TEMP       = 0.2
+R_GOAL     = 10
 SEED       = 42
 
-# L-barrier geometry
 CORNER_ROW = 5
 CORNER_COL = 5
 H_END_COL  = 12
@@ -32,149 +43,155 @@ START_ROW_MAX = CORNER_ROW - 2
 START_COL_MAX = CORNER_COL - 2
 GOAL_ROW_MIN  = 6
 GOAL_COL_MIN  = 6
-GOAL_ROW_MAX  = 9
-GOAL_COL_MAX  = 9
+
+N_RUNS            = 5
+PAIR_SEED         = 20_250_803
+ROLLOUT_SEED_BASE = 950_000
+
+MODEL_NAMES = ("woodbury_feat", "woodbury_td")
+DEFAULT_OUT = "../data/planning_open/angle/"
+FNAME       = "num_steps_K_multiseed.npz"
 
 
-# =============================================================================
-# HELPERS
-# =============================================================================
-
-def print_header(title):
-    print("\n" + "=" * 60)
-    print(title)
-    print("=" * 60)
-
-
-def print_result(name, mean, median, success):
-    print(f"  {name:<20s}  mean = {mean:6.1f}  median = {median:5.1f}  success = {success:.2f}")
-
-
-
-# =============================================================================
-# LEARNING-CURVE DATA COLLECTION
-# =============================================================================
-
-def train_and_save(
-    n_train_steps: int = 50_000,
-    eval_every:    int = 1_000,
-    n_eval_trials: int = 200,
-    eval_max_steps: int = 1_000,
-    save_dir: str = "../data/planning_open/angle/",
-):
-    np.random.seed(SEED)
-    os.makedirs(save_dir, exist_ok=True)
-
-    n_checkpoints = n_train_steps // eval_every
-
-    # ------------------------------------------------------------------
-    # 1. Environment
-    # ------------------------------------------------------------------
-    print_header("TRAIN & SAVE  –  open-field → L-barrier")
+def build_environment():
     T_os = create_transition_open(shape=(ROWS, COLS))
     D_os = get_complete_DR(T=T_os)
     D_sym = (D_os + D_os.T) / 2
+    h_edges = h_wall_edges(ROWS, COLS, barrier_row=CORNER_ROW,
+                           col_start=CORNER_COL, col_end=H_END_COL)
+    v_edges = v_wall_edges(ROWS, COLS, barrier_col=CORNER_COL,
+                           row_start=CORNER_ROW, row_end=V_END_ROW)
+    return T_os, D_os, D_sym, place_walls(T_os, h_edges + v_edges)
 
-    h_edges = h_wall_edges(ROWS, COLS,
-                            barrier_row=CORNER_ROW,
-                            col_start=CORNER_COL,
-                            col_end=H_END_COL)
-    v_edges = v_wall_edges(ROWS, COLS,
-                            barrier_col=CORNER_COL,
-                            row_start=CORNER_ROW,
-                            row_end=V_END_ROW)
-    wall_edges = h_edges + v_edges
-    T_new = place_walls(T_os, wall_edges)
-    print(f"  L-wall placed: {len(h_edges)} H edges + {len(v_edges)} V edges "
-          f"= {len(wall_edges)} total blocked edges.")
-    
-    all_records = []
 
-    for k in K:
-        print(f"\n  Running for K={k}...")
-        # ------------------------------------------------------------------
-        # 2. Feature basis
-        # ------------------------------------------------------------------
-        F, lam, _, emc = build_features(D_os, k=k)
-        F_sym, _, _, _ = build_features(D_sym, k=k)
+def start_goal_pools():
+    starts = [r * COLS + c
+              for r in range(START_ROW_MAX + 1)
+              for c in range(START_COL_MAX + 1)]
+    goals = [r * COLS + c
+             for r in range(GOAL_ROW_MIN, ROWS)
+             for c in range(GOAL_COL_MIN, COLS)]
+    return starts, goals
 
-        # ------------------------------------------------------------------
-        # 3. Analytic models (computed once)
-        # ------------------------------------------------------------------
-        M_wb = woodbury_feat(T_os, T_new, F_sym)
 
-        plan_wb   = lambda g, s: plan_with_M(F_sym, M_wb, T_new, g, s, max_steps=eval_max_steps, temp=TEMP)
+def train_and_save(n_runs=N_RUNS,
+                   k_values=None,
+                   sym_basis="both",
+                   n_train_steps=50_000,
+                   eval_every=1_000,
+                   n_eval_trials=200,
+                   eval_max_steps=1_000,
+                   save_dir=DEFAULT_OUT,
+                   fresh=False):
+    k_values = k_values or K_VALUES
+    os.makedirs(save_dir, exist_ok=True)
+    save_path = os.path.join(save_dir, FNAME)
+    n_checkpoints = n_train_steps // eval_every
+    checkpoint_steps = np.arange(1, n_checkpoints + 1) * eval_every
 
-        # ------------------------------------------------------------------
-        # 4. Incremental training + evaluation
-        # ------------------------------------------------------------------
-        checkpoint_steps = np.arange(1, n_checkpoints + 1) * eval_every
+    print_header("TRAIN & SAVE (multi-seed)  --  L-barrier, K sweep")
+    T_os, D_os, D_sym, T_new = build_environment()
+    nbrs = neighbour_table(T_new)
 
-        records = {name: np.zeros((n_checkpoints, n_eval_trials), dtype=np.int32)
-                for name in (f"woodbury_feat", f"woodbury_td")}
+    starts, goals = start_goal_pools()
+    pairs = draw_pairs(starts, goals, n_eval_trials, PAIR_SEED)
 
-        M_td  = None
+    basis_note = {"both": "F_sym for woodbury_feat, F for woodbury_td (original)",
+                  "feat": "F_sym for both",
+                  "none": "F for both"}[sym_basis]
+    print(f"  runs        : {n_runs}")
+    print(f"  K values    : {k_values}")
+    print(f"  basis       : {basis_note}")
+    print(f"  train steps : {n_train_steps:,} (eval every {eval_every:,})")
+    print(f"  pairs       : seed {PAIR_SEED}, "
+          f"{len({tuple(p) for p in pairs})} unique of {n_eval_trials} draws")
 
-        # Fixed start/goal regions for L-crossing evaluation
-        start_states = [r * COLS + c
-                        for r in range(START_ROW_MAX + 1)
-                        for c in range(START_COL_MAX + 1)]
-        goal_states  = [r * COLS + c
-                        for r in range(GOAL_ROW_MIN, ROWS)
-                        for c in range(GOAL_COL_MIN, COLS)]
-        
-        eval_rng = np.random.RandomState(SEED)
-        eval_state = eval_rng.get_state()
+    train_seeds = spawn_train_seeds(SEED, n_runs, n_checkpoints)
 
-        def _eval(plan_fn):
-            eval_rng.set_state(eval_state)
-            steps_arr = np.zeros(n_eval_trials, dtype=np.int32)
-            for i in range(n_eval_trials):
-                start = eval_rng.choice(start_states)
-                goal  = eval_rng.choice(goal_states)
-                st, _ = plan_fn(goal, start)
-                steps_arr[i] = st
-            return steps_arr
+    keys = [f"{m}_K{k}" for k in k_values for m in MODEL_NAMES]
+    records = init_records(keys, (n_runs, n_checkpoints, n_eval_trials))
+    runs_done = load_resume(save_path, records, n_runs, fresh)
 
-        for chunk in range(n_checkpoints):
-            train_seed = SEED + chunk * 1009
+    t_start = time.time()
 
-            print(f"\n  Chunk {chunk+1}/{n_checkpoints}  "
-                f"(steps {chunk*eval_every+1:,} → {(chunk+1)*eval_every:,})")
+    for run in range(runs_done, n_runs):
+        print_header(f"RUN {run + 1}/{n_runs}")
+        t_run = time.time()
 
-            # --- woodbury_td ---
-            M_td = woodbury_td(F, T_new, emc, lam,
-                            valid_states=np.arange(ROWS * COLS),
-                            grad_type="full",
-                            n_samples=eval_every,
-                            lr=LR,
-                            seed=train_seed,
-                            init_M=M_td)
-            plan_td = lambda g, s, _M=M_td: plan_with_M(F, _M, T_new, g, s,
-                                                        max_steps=eval_max_steps,
-                                                        temp=TEMP)
+        for k in k_values:
+            F, lam, _, emc = build_features(D_os, k=k)
+            F_sym, _, _, _ = build_features(D_sym, k=k)
 
-            # --- evaluate all models ---
-            records["woodbury_feat"][chunk] = _eval(plan_wb)
-            records["woodbury_td"][chunk]   = _eval(plan_td)
+            F_feat = F_sym if sym_basis in ("both", "feat") else F
+            F_td = F_sym if sym_basis == "feat" else F
 
-            # quick progress print
-            for name in records:
-                mean_steps = records[name][chunk].mean()
-                print(f"    {name:<20s}  mean_steps = {mean_steps:.1f}")
-        
-        all_records.append(records)
+            M_wb = woodbury_feat(T_os, T_new, F_feat)
 
-    # ------------------------------------------------------------------
-    # 5. Save
-    # ------------------------------------------------------------------
-    # save_path = os.path.join(save_dir, "num_steps_K.npz")
-    # save_dict = {"checkpoint_steps": checkpoint_steps}
-    # for k_val, records in zip(K, all_records):
-    #     for model_name, arr in records.items():
-    #         save_dict[f"{model_name}_K{k_val}"] = arr
-    # np.savez(save_path, **save_dict)
-    # print(f"\n  Saved → {save_path}")
+            M_td = None
+            for chunk in range(n_checkpoints):
+                M_td = woodbury_td(F_td, T_new, emc, lam,
+                                   valid_states=np.arange(ROWS * COLS),
+                                   grad_type="full",
+                                   n_samples=eval_every, lr=LR,
+                                   seed=int(train_seeds[run, chunk]), init_M=M_td)
+                records[f"woodbury_feat_K{k}"][run, chunk] = evaluate_pairs(
+                    lambda g: values_M(F_feat, M_wb, T_new, g, R_GOAL),
+                    pairs, run, chunk, nbrs, eval_max_steps, TEMP, ROLLOUT_SEED_BASE)
+                records[f"woodbury_td_K{k}"][run, chunk] = evaluate_pairs(
+                    lambda g, _M=M_td: values_M(F_td, _M, T_new, g, R_GOAL),
+                    pairs, run, chunk, nbrs, eval_max_steps, TEMP, ROLLOUT_SEED_BASE)
 
-if __name__ == '__main__':
-    train_and_save()
+            print(f"  K={k:>3d}  feat={records[f'woodbury_feat_K{k}'][run, -1].mean():7.1f}  "
+                  f"td={records[f'woodbury_td_K{k}'][run, -1].mean():7.1f}", flush=True)
+
+        save_records(save_path, records, run + 1,
+                     checkpoint_steps=checkpoint_steps,
+                     pairs=pairs,
+                     k_values=np.array(k_values),
+                     sym_basis=sym_basis,
+                     train_seeds=train_seeds,
+                     rollout_seed_base=ROLLOUT_SEED_BASE,
+                     pair_seed=PAIR_SEED,
+                     eval_max_steps=eval_max_steps,
+                     n_runs=n_runs)
+        print(f"  run {run+1} done in {time.time() - t_run:.1f}s  ->  saved")
+
+    print(f"\n  total {time.time() - t_start:.1f}s   saved -> {save_path}")
+    return save_path
+
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("mode", choices=["train", "report"], nargs="?", default="train")
+    p.add_argument("--runs", type=int, default=N_RUNS)
+    p.add_argument("--k", type=str, default=None)
+    p.add_argument("--sym-basis", choices=["both", "feat", "none"], default="both",
+                   help="'both' reproduces the original mixed-basis setup")
+    p.add_argument("--steps", type=int, default=50_000)
+    p.add_argument("--eval-every", type=int, default=1_000)
+    p.add_argument("--trials", type=int, default=200)
+    p.add_argument("--max-steps", type=int, default=1_000)
+    p.add_argument("--out", type=str, default=DEFAULT_OUT)
+    p.add_argument("--fresh", action="store_true")
+    args = p.parse_args()
+
+    k_values = ([int(x) for x in args.k.split(",")] if args.k else K_VALUES)
+    save_path = os.path.join(args.out, FNAME)
+    if args.mode == "train":
+        save_path = train_and_save(n_runs=args.runs, k_values=k_values,
+                                   sym_basis=args.sym_basis,
+                                   n_train_steps=args.steps,
+                                   eval_every=args.eval_every,
+                                   n_eval_trials=args.trials,
+                                   eval_max_steps=args.max_steps,
+                                   save_dir=args.out, fresh=args.fresh)
+
+    report_multiseed(save_path,
+           groups=[(f"K = {k}", {m: f"{m}_K{k}" for m in MODEL_NAMES})
+                   for k in k_values],
+           contrasts=[("woodbury_td", "woodbury_feat")],
+           within_label="pairs")
+
+
+if __name__ == "__main__":
+    main()
