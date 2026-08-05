@@ -11,7 +11,10 @@ from utils import (create_transition_open, get_complete_DR, place_barrier,
                    v_wall_edges, plan_with_M, plan_with_D, _pick_next)
 from models import build_features, woodbury_td, woodbury_full
 
-# ------------------------------------------------------------------ FIXED PARAMS
+# =============================================================================
+# CONFIG
+# =============================================================================
+
 LR             = 0.01
 TEMP           = 0.2
 EVAL_MAX_STEPS = 1000
@@ -26,7 +29,10 @@ os.makedirs(save_dir, exist_ok=True)
 RESULTS_PATH = save_dir + "results_basis_ablation.pkl"
 
 
-# ============================================================ ENVIRONMENT SETUPS
+# =============================================================================
+# ENVIRONMENT
+# =============================================================================
+
 def build_env(name):
     if name == "horizontal":
         rows = cols = 15
@@ -63,7 +69,10 @@ def build_env(name):
     return env
 
 
-# =================================================================== BASIS SETUP
+# =============================================================================
+# BASIS
+# =============================================================================
+
 def make_basis(env, kind):
     n, D_warm = env["n"], env["D_warm"]
     rows, cols = env["rows"], env["cols"]
@@ -134,7 +143,10 @@ def basis_list(env_name):
     return real + rand_lr + interp
 
 
-# ======================================================================= EVAL
+# =============================================================================
+# EVAL
+# =============================================================================
+
 def _values_M(F, M, T_new, goal, n):
     nt = np.array([s for s in range(n) if s != goal])
     t_vec = T_new[np.ix_(nt, [goal])].flatten()
@@ -214,7 +226,10 @@ def _self_test(env):
         assert 0 <= steps <= EVAL_MAX_STEPS, f"bad rollout step count: {steps}"
 
 
-# ==================================================================== TRAINING
+# =============================================================================
+# TRAINING
+# =============================================================================
+
 def run_basis(env, kind, seeds, eval_stride=None):
     """
     Multi-seed, checkpointed training for one basis.
@@ -249,7 +264,10 @@ def run_basis(env, kind, seeds, eval_stride=None):
     return steps_axis, out
 
 
-# ===================================================================== DRIVER
+# =============================================================================
+# DRIVER
+# =============================================================================
+
 def load_results():
     if os.path.exists(RESULTS_PATH):
         with open(RESULTS_PATH, "rb") as fh:
@@ -298,10 +316,11 @@ def run(env_names, seeds, eval_stride=1):
 
 
 def report_table(res):
-    """Rebuttal table: basis x quarter-budget checkpoints, plus the final
-    mean +/- SEM and success +/- SEM across seeds (the values to report)."""
-    def _sem(x):                                    # SEM across seeds
-        return x.std(ddof=1) / np.sqrt(len(x)) if len(x) > 1 else 0.0
+    """Rebuttal table: basis x quarter-budget checkpoints, each shown as
+    mean +/- SEM across seeds, plus the final success (mean +/- SEM)."""
+    def _sem(x):                                    # SEM across the seed axis (0)
+        n = x.shape[0]
+        return x.std(axis=0, ddof=1) / np.sqrt(n) if n > 1 else np.zeros(x.shape[1:])
     for env_name, data in res.get("data", {}).items():
         if not data:
             continue
@@ -311,28 +330,33 @@ def report_table(res):
         n_seeds = data[any_key]["results"].shape[0]
         q_idx = sorted(set(max(0, round(f * n_pts) - 1) for f in (0.25, 0.5, 0.75, 1.0)))
         q_steps = [steps[i] for i in q_idx]
-        print(f"\n================ {env_name}  (mean steps; +/- = SEM over "
+        cw = 15                                     # column width (holds "mean±sem")
+        print(f"\n================ {env_name}  (mean steps +/- SEM over "
               f"{n_seeds} seeds) ================")
-        hdr = ("".join(f"{s//1000:>7}k" for s in q_steps)
-               + "     final (mean +/- sem)   success (mean +/- sem)")
+        hdr = "".join(f"{str(s // 1000) + 'k':>{cw}}" for s in q_steps) + f"{'success':>{cw}}"
         print(f"{'basis':<20}{hdr}")
-        print("-" * (20 + 8 * len(q_idx) + 50))
+        print("-" * (20 + cw * (len(q_idx) + 1)))
         for kind in basis_list(env_name):
             if kind not in data:
                 continue
             r = data[kind]["results"]
-            means = r[:, :, 0].mean(axis=0)
-            fc, fs = r[:, -1, 0], r[:, -1, 2]       # per-seed final cost / success
-            row = "".join(f"{means[i]:8.1f}" for i in q_idx)
-            print(f"{kind:<20}{row}     {fc.mean():7.1f} +/- {_sem(fc):5.1f}   "
-                  f"{fs.mean():.3f} +/- {_sem(fs):.3f}")
+            m  = r[:, :, 0].mean(axis=0)            # per-checkpoint mean over seeds
+            se = _sem(r[:, :, 0])                   # per-checkpoint SEM over seeds
+            fs = r[:, -1, 2]                         # per-seed final success rate
+            cells = "".join(f"{m[i]:.1f}±{se[i]:.1f}".rjust(cw) for i in q_idx)
+            succ_sem = fs.std(ddof=1) / np.sqrt(n_seeds) if n_seeds > 1 else 0.0
+            succ = f"{fs.mean():.3f}±{succ_sem:.3f}".rjust(cw)
+            print(f"{kind:<20}{cells}{succ}")
         if env_name in res.get("oracle", {}):
             o = res["oracle"][env_name]              # seed-free reference, no +/-
-            print(f"{'woodbury_full oracle':<20}{'':>{8*len(q_idx)}}     "
-                  f"{o[0]:7.1f}  (seed-free)   {o[2]:.3f}")
+            pad = "".join(f"{'':>{cw}}" for _ in q_idx[:-1])
+            print(f"{'woodbury_full oracle':<20}{pad}"
+                  f"{f'{o[0]:.1f} (sf)':>{cw}}{f'{o[2]:.3f}':>{cw}}")
 
 
-# ======================================================================== MAIN
+# =============================================================================
+# MAIN
+# =============================================================================
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("env", choices=["horizontal", "four_room", "both"], nargs="?",
