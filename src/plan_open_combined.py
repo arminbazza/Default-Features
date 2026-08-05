@@ -72,14 +72,43 @@ def _goal_states():
             for c in range(GOAL_COL_MIN, GOAL_COL_MAX + 1)]
 
 
-def build_environments():
-    """
-    Build the open field and the three barrier environments.
+def _barrier_adjacent_states(wall_edges):
+    states = {s for edge in wall_edges for s in edge}          # above/below cells
+    for r in {s // COLS for s in states}:
+        cols_in_row = [s % COLS for s in states if s // COLS == r]
+        for c in (min(cols_in_row) - 1, max(cols_in_row) + 1):  # left / right ends
+            if 0 <= c < COLS:
+                states.add(r * COLS + c)
+    return np.array(sorted(states))
 
-    Returns
-    -------
-    T_os, D_os, F, lam, emc, T_h, T_l, T_both, edges
-    """
+
+def _train_M_walk(F, T_new, emc, lam, n_samples, lr, seed, init_M,
+                  start_states=None):
+    N, k = F.shape
+    if start_states is None:
+        start_states = np.arange(N)
+    rng = np.random.RandomState(seed)
+    M = np.eye(k) if init_M is None else init_M.copy()
+    lam_inv = 1.0 / lam[:k]
+
+    s = rng.choice(start_states)
+    visited = np.empty(n_samples, dtype=np.int64)
+    for t in range(n_samples):
+        sp = rng.choice(N, p=T_new[s])
+
+        f_s  = F[s]
+        f_sp = F[sp]
+        r_s = f_s * lam_inv
+
+        delta = emc * (r_s + f_sp @ M) - f_s @ M
+        M += lr * np.outer(f_s, delta)
+
+        visited[t] = s
+        s = sp
+    return M, visited
+
+
+def build_environments():
     T_os = create_transition_open(shape=(ROWS, COLS))
     D_os = get_complete_DR(T=T_os)
     D_os = (D_os + D_os.T) / 2          # symmetrise
@@ -109,20 +138,24 @@ def train_and_save(
     eval_every:    int = 5_000,
     n_eval_trials: int = 200,
     eval_max_steps: int = 1_000,
-    grad_type: str = "semi",
-    save_dir: str = "../data/planning_open/combine/",
+    seed: int = None,
+    run: int = 0,
+    save_dir: str = "../data/planning_open/combine/fast/",
 ):
-    np.random.seed(SEED)
+    np.random.seed(seed)
     os.makedirs(save_dir, exist_ok=True)
     n_checkpoints = n_train_steps // eval_every
 
-    # ------------------------------------------------------------------ envs
     T_os, D_os, F, lam, emc, T_h, T_l, T_both, edges = build_environments()
     print(f"  M1 edges {len(edges['l1_h'])}+{len(edges['l1_v'])} | M2 edges "
           f"{len(edges['l2_h'])}+{len(edges['l2_v'])} | test env = both")
     I = np.eye(K)
 
-    # ---------------------------------------------------- analytic (compute once)
+    valid_states_all = np.arange(ROWS * COLS)
+    h1_adjacent = _barrier_adjacent_states(edges['l1_h'])   # M1 barrier (H1)
+    h2_adjacent = _barrier_adjacent_states(edges['l2_h'])   # M2 barrier (H2)
+    sampled_M1, sampled_M2 = [], []
+
     print("\n  [woodbury_feat] M1, M2, and M1+M2-I ...")
     M1_feat = woodbury_feat(T_os, T_h, F)
     M2_feat = woodbury_feat(T_os, T_l, F)
@@ -146,7 +179,6 @@ def train_and_save(
     plan_full_comb  = lambda g, s: plan_with_D(D_full_comb, T_both, g, s, max_steps=eval_max_steps, temp=TEMP)
     plan_full_exact = lambda g, s: plan_with_D(D_exact,     T_both, g, s, max_steps=eval_max_steps, temp=TEMP)
 
-    # ------------------------------------------------------------- bookkeeping
     checkpoint_steps = np.arange(1, n_checkpoints + 1) * eval_every
     records = {name: np.zeros((n_checkpoints, n_eval_trials), dtype=np.int32)
                for name in model_names}
@@ -157,7 +189,7 @@ def train_and_save(
 
     # fixed (start, goal) region pairs -- identical across all checkpoints
     start_states, goal_states = _start_states(), _goal_states()
-    eval_rng = np.random.RandomState(SEED)
+    eval_rng = np.random.RandomState(seed)
     eval_state = eval_rng.get_state()
 
     def _eval(plan_fn):
@@ -172,37 +204,28 @@ def train_and_save(
 
     for chunk in range(n_checkpoints):
         # distinct sample streams for the two barriers (independent learning)
-        seed_1 = SEED + chunk * 1009
-        seed_2 = SEED + chunk * 1009 + 7919
+        seed_1 = seed + chunk * 1009
+        seed_2 = seed + chunk * 1009 + 7919
 
         print(f"\n  Chunk {chunk+1}/{n_checkpoints}  "
               f"(steps/barrier {chunk*eval_every+1:,} -> {(chunk+1)*eval_every:,})")
 
-        # --- TD on the horizontal-only env  -> M1_td ---
-        M1_td = woodbury_td(F, T_h, emc, lam,
-                            valid_states=np.arange(ROWS * COLS),
-                            grad_type=grad_type,
-                            n_samples=eval_every,
-                            lr=LR,
-                            seed=seed_1,
-                            init_M=M1_td)
+        M1_td, visited_1 = _train_M_walk(F, T_h, emc, lam,
+                                         n_samples=eval_every, lr=LR, seed=seed_1,
+                                         init_M=M1_td, start_states=valid_states_all)
 
-        # --- TD on the L-only env  -> M2_td ---
-        M2_td = woodbury_td(F, T_l, emc, lam,
-                            valid_states=np.arange(ROWS * COLS),
-                            grad_type=grad_type,
-                            n_samples=eval_every,
-                            lr=LR,
-                            seed=seed_2,
-                            init_M=M2_td)
+        M2_td, visited_2 = _train_M_walk(F, T_l, emc, lam,
+                                         n_samples=eval_every, lr=LR, seed=seed_2,
+                                         init_M=M2_td, start_states=valid_states_all)
 
-        # --- zero-shot composition, planned on the BOTH-barrier env ---
+        sampled_M1.append(visited_1)
+        sampled_M2.append(visited_2)
+
         M_td_comb = M1_td + M2_td - I
         plan_td_comb = lambda g, s, _M=M_td_comb: plan_with_M(F, _M, T_both, g, s, max_steps=eval_max_steps, temp=TEMP)
         plan_td_M1   = lambda g, s: plan_with_M(F, M1_td, T_both, g, s, max_steps=eval_max_steps, temp=TEMP)
         plan_td_M2   = lambda g, s: plan_with_M(F, M2_td, T_both, g, s, max_steps=eval_max_steps, temp=TEMP)
 
-        # --- evaluate every model at this checkpoint ---
         records["dfr_mb_combined"][chunk]        = _eval(plan_mb_comb)
         records["dfr_td_combined"][chunk]        = _eval(plan_td_comb)
         records["dfr_mb_M1_only"][chunk]         = _eval(plan_mb_M1)
@@ -216,14 +239,28 @@ def train_and_save(
         for name in model_names:
             print(f"    {name:<24s}  mean_steps = {records[name][chunk].mean():6.1f}")
 
-    # ------------------------------------------------------------------ save
-    save_path = os.path.join(save_dir, "learning_curves_combine.npz")
+    sampled_M1 = np.concatenate(sampled_M1)      # (n_train_steps,)
+    sampled_M2 = np.concatenate(sampled_M2)
+    n1_adj = int(np.isin(sampled_M1, h1_adjacent).sum())
+    n2_adj = int(np.isin(sampled_M2, h2_adjacent).sum())
+
+    print_header("TD samples drawn from states touching the trained barrier")
+    print(f"  M1 (H1): {n1_adj:,} / {sampled_M1.size:,} "
+          f"({100 * n1_adj / sampled_M1.size:.2f}%)   "
+          f"[{h1_adjacent.size} adjacent states]")
+    print(f"  M2 (H2): {n2_adj:,} / {sampled_M2.size:,} "
+          f"({100 * n2_adj / sampled_M2.size:.2f}%)   "
+          f"[{h2_adjacent.size} adjacent states]")
+
+    save_path = os.path.join(save_dir, f"learning_curves_combine_{run}.npz")
     np.savez(save_path,
              checkpoint_steps=checkpoint_steps,
              **records,)
 
     operator_path = os.path.join(save_dir, "M1_M2_td.npz")
-    np.savez(operator_path, M1_td=M1_td, M2_td=M2_td)
+    np.savez(operator_path, M1_td=M1_td, M2_td=M2_td,
+             sampled_states_M1=sampled_M1, sampled_states_M2=sampled_M2,
+             h1_adjacent=h1_adjacent, h2_adjacent=h2_adjacent)
 
     print(f"\n  Saved -> {save_path}")
     print(f"  Saved -> {operator_path}  (M1_td, M2_td: {M1_td.shape})")
@@ -232,4 +269,6 @@ def train_and_save(
 
 
 if __name__ == '__main__':
-    train_and_save()
+    for i, seed in enumerate([0, 1, 2, 4]):
+        print(i, seed)
+        train_and_save(seed=seed, run=i, n_train_steps=100_000, eval_every=5_000, n_eval_trials=200, eval_max_steps=1_000)
