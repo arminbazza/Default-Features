@@ -298,31 +298,38 @@ def run(env_names, seeds, eval_stride=1):
 
 
 def report_table(res):
-    """Rebuttal table: basis x quarter-budget checkpoints + success@final."""
+    """Rebuttal table: basis x quarter-budget checkpoints, plus the final
+    mean +/- SEM and success +/- SEM across seeds (the values to report)."""
+    def _sem(x):                                    # SEM across seeds
+        return x.std(ddof=1) / np.sqrt(len(x)) if len(x) > 1 else 0.0
     for env_name, data in res.get("data", {}).items():
         if not data:
             continue
         any_key = next(iter(data))
         steps = data[any_key]["steps"]
         n_pts = len(steps)
+        n_seeds = data[any_key]["results"].shape[0]
         q_idx = sorted(set(max(0, round(f * n_pts) - 1) for f in (0.25, 0.5, 0.75, 1.0)))
         q_steps = [steps[i] for i in q_idx]
-        print(f"\n================ {env_name}  (mean accumulated cost) ================")
-        hdr = "".join(f"{s//1000:>7}k" for s in q_steps) + "   succ@final"
+        print(f"\n================ {env_name}  (mean steps; +/- = SEM over "
+              f"{n_seeds} seeds) ================")
+        hdr = ("".join(f"{s//1000:>7}k" for s in q_steps)
+               + "     final (mean +/- sem)   success (mean +/- sem)")
         print(f"{'basis':<20}{hdr}")
-        print("-" * (20 + 8 * len(q_idx) + 12))
+        print("-" * (20 + 8 * len(q_idx) + 50))
         for kind in basis_list(env_name):
             if kind not in data:
                 continue
             r = data[kind]["results"]
             means = r[:, :, 0].mean(axis=0)
-            succ = r[:, -1, 2].mean()
+            fc, fs = r[:, -1, 0], r[:, -1, 2]       # per-seed final cost / success
             row = "".join(f"{means[i]:8.1f}" for i in q_idx)
-            print(f"{kind:<20}{row}   {succ:.2f}")
+            print(f"{kind:<20}{row}     {fc.mean():7.1f} +/- {_sem(fc):5.1f}   "
+                  f"{fs.mean():.3f} +/- {_sem(fs):.3f}")
         if env_name in res.get("oracle", {}):
-            o = res["oracle"][env_name]
-            print(f"{'woodbury_full oracle':<20}{'':>{8*len(q_idx)}}   {o[2]:.2f}"
-                  f"   (mean {o[0]:.1f})")
+            o = res["oracle"][env_name]              # seed-free reference, no +/-
+            print(f"{'woodbury_full oracle':<20}{'':>{8*len(q_idx)}}     "
+                  f"{o[0]:7.1f}  (seed-free)   {o[2]:.3f}")
 
 
 # ======================================================================== MAIN
