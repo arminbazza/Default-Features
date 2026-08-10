@@ -263,12 +263,13 @@ def train_and_save(
         records["woodbury_full_combined"][chunk] = _eval(plan_full_comb)
         records["woodbury_full_exact"][chunk]    = _eval(plan_full_exact)
 
-        for name in model_names:
-            vals = records[name][chunk]
-            m  = vals.mean()
-            ci = 1.96 * vals.std(ddof=1) / np.sqrt(len(vals))   # 95% CI half-width
-            print(f"    {name:<24s}  mean_steps = {m:6.1f}  "
-                  f"95% CI [{m - ci:6.1f}, {m + ci:6.1f}]")
+        if chunk != n_checkpoints - 1:
+            for name in model_names:
+                vals = records[name][chunk]
+                m  = vals.mean()
+                ci = 1.96 * vals.std(ddof=1) / np.sqrt(len(vals))
+                print(f"    {name:<24s}  mean_steps = {m:6.1f}  "
+                    f"95% CI [{m - ci:6.1f}, {m + ci:6.1f}]")
 
     save_path = os.path.join(save_dir, "learning_curves_combine.npz")
     np.savez(save_path,
