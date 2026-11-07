@@ -26,7 +26,7 @@ RANDOM_LRS     = [0.003, 0.03]
 
 save_dir = "../data/basis_alignment/"
 os.makedirs(save_dir, exist_ok=True)
-RESULTS_PATH = save_dir + "results_basis_ablation.pkl"
+RESULTS_PATH = save_dir + "results_basis_comparison.pkl"
 
 
 # =============================================================================
